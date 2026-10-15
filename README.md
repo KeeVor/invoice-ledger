@@ -1,3 +1,5 @@
+<p align="center"><img src="src/assets/piaoji.svg" width="72" alt="票迹标志"></p>
+
 # 票迹 Piaoji
 
 **把发票留在本地，让核对、查重和整理更轻一点。**
@@ -9,6 +11,10 @@
 [下载安装包](https://github.com/KeeVor/invoice-ledger/releases/latest) · [查看版本记录](https://github.com/KeeVor/invoice-ledger/releases) · [反馈问题](https://github.com/KeeVor/invoice-ledger/issues)
 
 > 当前主要支持常见中国增值税电子发票。识别是录入辅助，不是税务验真；号码、日期和金额需要人工核对。
+
+![票迹发票台账界面](docs/images/ledger.png)
+
+*界面截图使用虚构公司和测试号码，不包含真实票据。*
 
 ## 可以做什么
 

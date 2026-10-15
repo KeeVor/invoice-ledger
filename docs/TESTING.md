@@ -18,7 +18,13 @@ npm run test:updates:ui
 
 `scripts/smoke.mjs`、`scripts/ui-smoke.mjs` 和 `scripts/check-package.mjs` 保留完整导入、核对、导出、备份恢复及打包测试。公开版本使用虚构发票号码，不包含真实票据文件。
 
-要重现这一组固定样例回归，需自行准备虚构 PDF 和图片：
+运行以下命令生成虚构 PDF 和图片（依赖开发环境中的 Pillow 和 Windows 微软雅黑字体）：
+
+```powershell
+.venv\Scripts\python.exe scripts/generate-samples.py
+```
+
+输出位于 `.test-data/synthetic-samples/`，内容如下：
 
 | 样例 | 号码 | 不含税金额 | 税额 | 价税合计 |
 | --- | --- | --- | --- | --- |
@@ -28,8 +34,8 @@ npm run test:updates:ui
 样例日期为 2026 年 9 月，PDF 分类为物业费，图片分类为食品 / 农产品。该组脚本含固定字段和金额断言，不是接收任意票据的通用测试。若修改样例内容，应同步修改断言。
 
 ```powershell
-$env:SAMPLE_PDF = '虚构样例PDF的完整路径'
-$env:SAMPLE_IMAGE = '虚构样例图片的完整路径'
+$env:SAMPLE_PDF = (Resolve-Path .test-data/synthetic-samples/invoice.pdf).Path
+$env:SAMPLE_IMAGE = (Resolve-Path .test-data/synthetic-samples/invoice.png).Path
 npm run test:smoke
 npm run test:ui
 npm run test:package

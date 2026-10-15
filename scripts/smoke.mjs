@@ -45,8 +45,8 @@ try {
     .waitFor({ timeout: 120000 });
   const drafts = await page.evaluate(() => window.ledger.drafts());
   assert.deepEqual(drafts.map((d) => d.invoiceNumber).sort(), [
-    "20000000000000000101",
     "20000000000000000001",
+    "20000000000000000101",
   ]);
   for (let i = 0; i < 2; i++) {
     await page
