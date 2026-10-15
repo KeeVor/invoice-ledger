@@ -78,18 +78,18 @@ test("duplicate checks and downloads are ignored while a request is in flight", 
   assert.equal(f.service.snapshot().status, "downloaded");
   assert.equal(f.adapter.installs, 0);
 });
-test("cancelled confirmation or failed backup cannot launch the installer", async () => {
+test("cancelled confirmation or failed preparation cannot launch the installer", async () => {
   const f = fixture(true, async () => false); await available(f); await f.service.download();
   await f.service.install();
   assert.equal(f.adapter.installs, 0);
   assert.equal(f.service.snapshot().status, "downloaded");
-  const broken = fixture(true, async () => { throw new Error("backup failed"); });
+  const broken = fixture(true, async () => { throw new Error("installation blocked"); });
   await available(broken); await broken.service.download();
-  await assert.rejects(broken.service.install(), /backup failed/);
+  await assert.rejects(broken.service.install(), /installation blocked/);
   assert.equal(broken.adapter.installs, 0);
   assert.equal(broken.service.snapshot().status, "downloaded");
 });
-test("successful backup precedes installation and repeated install is ignored", async () => {
+test("confirmed preparation precedes installation and repeated install is ignored", async () => {
   let prepared = false;
   const f = fixture(true, async () => { prepared = true; return true; });
   await available(f); await f.service.download();

@@ -27,6 +27,7 @@ async function addTree(zip: ZipFile, root: string, folder: string) {
 }
 export async function createBackup(db: LedgerDB, root: string, target: string) {
   const snapshot = within(root, `.snapshot-${randomUUID()}.db`);
+  const verification = within(root, `.backup-check-${randomUUID()}`);
   const partial = `${target}.partial`;
   try {
     await db.db.backup(snapshot);
@@ -47,11 +48,31 @@ export async function createBackup(db: LedgerDB, root: string, target: string) {
     const done = pipeline(zip.outputStream, createWriteStream(partial));
     zip.end();
     await done;
+    await unpackBackup(partial, verification);
     await fs.rename(partial, target);
   } finally {
     await fs.rm(snapshot, { force: true });
     await fs.rm(partial, { force: true }).catch(() => {});
+    await fs.rm(verification, { recursive: true, force: true });
   }
+}
+export async function createAutoBackup(db: LedgerDB, root: string) {
+  const folder = within(root, "backups");
+  await fs.mkdir(folder, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const target = join(folder, `auto-${stamp}-${randomUUID()}.piaoji`);
+  await createBackup(db, root, target);
+  // Retire legacy managed backups only after the new backup passes validation.
+  for (const entry of await fs.readdir(folder, { withFileTypes: true })) {
+    if (
+      !entry.isFile() ||
+      !/^(auto|before-update|before-restore)-.*\.piaoji$/.test(entry.name)
+    )
+      continue;
+    const previous = within(root, `backups/${entry.name}`);
+    if (previous !== target) await fs.rm(previous);
+  }
+  return target;
 }
 export async function unpackBackup(source: string, destination: string) {
   await fs.mkdir(destination, { recursive: true });

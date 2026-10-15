@@ -27,6 +27,7 @@ const application = await electron.launch({
 const page = await application.firstWindow();
 await page.emulateMedia({ reducedMotion: "reduce" });
 const errors = [];
+let closed = false;
 page.on("pageerror", (error) => errors.push(error.message));
 page.on("console", (message) => {
   if (message.type() === "error") errors.push(message.text());
@@ -114,6 +115,9 @@ try {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath });
   }, backupPath);
   assert.equal(await page.evaluate(() => window.ledger.backup()), backupPath);
+  const backups = join(data, "backups");
+  const legacyNames = ["auto-older.piaoji", "auto-old.piaoji", "before-update-old.piaoji", "before-restore-old.piaoji"];
+  for (const name of legacyNames) await fs.copyFile(backupPath, join(backups, name));
   const firstId = await page.evaluate(
     async () => (await window.ledger.list({})).items[0].id,
   );
@@ -136,6 +140,7 @@ try {
     .getByRole("button", { name: "确认恢复", exact: true })
     .click({ force: true });
   assert.equal(await page.evaluate(() => window.restoreResult), true);
+  assert.deepEqual((await fs.readdir(backups)).sort(), [...legacyNames].sort());
   assert.equal((await page.evaluate(() => window.ledger.stats())).count, 2);
   assert.ok(
     await page.evaluate((id) => window.ledger.preview("invoice", id), firstId),
@@ -192,6 +197,14 @@ try {
   );
   await page.screenshot({ path: join(output, "compact.png") });
   assert.deepEqual(errors, []);
+  const exited = application.waitForEvent("close", { timeout: 30000 });
+  await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+  await exited;
+  closed = true;
+  const retained = await fs.readdir(backups);
+  assert.equal(retained.length, 1);
+  assert.match(retained[0], /^auto-.*\.piaoji$/);
+  assert.ok((await fs.stat(backupPath)).isFile());
   const result = {
     passed: true,
     checks: [
@@ -203,6 +216,8 @@ try {
       "Excel text identifiers",
       "full backup",
       "restore database and original previews",
+      "restore does not create an extra backup",
+      "normal exit keeps one automatic backup and retires legacy copies",
       "duplicate UI and database rejection",
       "import cancellation and subsequent retry",
       "compact layout",
@@ -217,5 +232,5 @@ try {
   );
   console.log(JSON.stringify(result, null, 2));
 } finally {
-  await application.close();
+  if (!closed) await application.close();
 }

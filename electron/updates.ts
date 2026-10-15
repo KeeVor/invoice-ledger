@@ -110,7 +110,7 @@ export class UpdateService {
     if (this.state.status !== "downloaded" || this.installing) return;
     this.installing = true;
     try {
-      // The owner confirms, blocks writes and backs up before allowing shutdown.
+      // The owner confirms and blocks writes before allowing shutdown.
       if (!(await this.prepareInstall())) return;
       this.set({ ...this.state, status: "installing" });
       try {

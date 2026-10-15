@@ -76,7 +76,7 @@ export function UpdatePanel({ version, blocked }: { version?: string; blocked: b
         {state.status === "downloaded" && <button className="button primary" disabled={working || blocked} onClick={() => void action("install")}>{pending ? <LoaderCircle size={17} className="spin" /> : <RefreshCw size={17} />}安装更新并退出</button>}
         <button className="button secondary" disabled={pending} onClick={() => void action("releases")}><ArrowUpRight size={17} />发布页面</button>
       </div>
-      <p className="subtle">安装前自动创建完整备份。当前安装包尚未签名，Windows 可能提示未知发布者，请核对发布来源。</p>
+      <p className="subtle">安装更新不会额外创建备份。当前安装包尚未签名，Windows 可能提示未知发布者，请核对发布来源。</p>
     </section>
   );
 }

@@ -1211,12 +1211,12 @@ export default function App() {
                   <div className="backup-note">
                     <AlertTriangle size={18} />
                     <p>
-                      恢复会替换当前台账和原件，操作前会先保留一份备份。请只使用可信的备份文件。
+                      恢复会替换当前台账和原件，不会另存恢复前的备份。请只使用可信的备份文件。
                     </p>
                   </div>
                   <p className="subtle">
-                    修改记录后，正常退出票迹会自动备份，保留最近 5
-                    份。建议另存一份到 U 盘或其他硬盘，以免电脑损坏时丢失。
+                    修改记录后，正常退出票迹会自动备份，只保留最新 1
+                    份；新备份创建并校验成功后才删除旧备份。手动导出的备份不自动删除，建议另存到其他硬盘。
                   </p>
                 </section>
                 <UpdatePanel version={info?.version} blocked={busy || importing} />

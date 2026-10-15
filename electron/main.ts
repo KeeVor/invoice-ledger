@@ -8,7 +8,7 @@ import { z } from "zod";
 import ExcelJS from "exceljs";
 import { LedgerDB, CATEGORIES, filterSchema } from "./database";
 import { OCRWorker } from "./ocr";
-import { createBackup, unpackBackup, within } from "./backup";
+import { createAutoBackup, createBackup, unpackBackup, within } from "./backup";
 import type { Filter, ImportProgress, ConfirmationRequest } from "../src/types";
 import { userError } from "../src/messages";
 import { autoUpdater } from "electron-updater";
@@ -177,27 +177,18 @@ async function importFiles(input: unknown) {
     importing = false;
   }
 }
-async function backupTo(target: string) {
+async function backupTo(target?: string) {
   if (maintenance || importing) throw new Error("请等待导入或其他备份操作完成");
   maintenance = true;
   try {
-    await createBackup(db, root, target);
+    if (target) await createBackup(db, root, target);
+    else target = await createAutoBackup(db, root);
     db.setSetting("lastBackup", new Date().toISOString());
     dirty = false;
     return target;
   } finally {
     maintenance = false;
   }
-}
-async function autoBackup() {
-  const file = join(root, "backups", `auto-${dateTag()}.piaoji`);
-  await backupTo(file);
-  const previous = (await fs.readdir(join(root, "backups")))
-    .filter((n) => /^auto-.*\.piaoji$/.test(n))
-    .sort()
-    .reverse();
-  for (const name of previous.slice(5))
-    await fs.rm(within(root, `backups/${name}`), { force: true });
 }
 function setupHandlers() {
   handle("update-state", () => updates.snapshot());
@@ -431,14 +422,13 @@ function setupHandlers() {
     const decision = await confirmInWindow({
       title: "恢复备份",
       description:
-        "恢复会替换当前全部台账和原件。软件会先保存恢复前的完整备份，请仅恢复可信来源的文件。",
+        "恢复会替换当前全部台账和原件，不会另存恢复前的备份。请确认所选文件无误，并仅恢复可信来源的文件。",
       details: `所选备份：${basename(selected.filePaths[0])}`,
       confirmLabel: "确认恢复",
       danger: true,
     });
     if (!decision) return false;
     if (importing || maintenance) throw new Error("请等待导入或备份完成");
-    await backupTo(join(root, "backups", `before-restore-${dateTag()}.piaoji`));
     maintenance = true;
     worker.stop();
     const staging = within(root, `.restore-${randomUUID()}`),
@@ -466,7 +456,6 @@ function setupHandlers() {
       }
       db = new LedgerDB(join(root, "invoices.db"));
       closed = false;
-      db.setSetting("lastBackup", new Date().toISOString());
       db.event("restore", "database");
       dirty = true;
       cleanupSafe = true;
@@ -555,8 +544,8 @@ else {
             throw new Error("请先完成导入、备份或当前确认操作，再安装更新。");
           const accepted = await confirmInWindow({
             title: "安装更新并退出",
-            description: "票迹会先备份全部账本和原件，再退出并打开新版安装程序。请先保存正在编辑的内容；安装时保留原安装位置。",
-            confirmLabel: "备份并安装",
+            description: "票迹会退出并打开新版安装程序，不会额外创建备份。请先保存正在编辑的内容；安装时保留原安装位置。",
+            confirmLabel: "退出并安装",
           });
           if (!accepted) return false;
           if (importing || maintenance)
@@ -564,9 +553,6 @@ else {
           maintenance = true;
           updateInstalling = true;
           try {
-            await createBackup(db, root, join(root, "backups", `before-update-${dateTag()}.piaoji`));
-            db.setSetting("lastBackup", new Date().toISOString());
-            dirty = false;
             worker.stop();
             closing = true;
             return true;
@@ -597,7 +583,7 @@ else {
           event.preventDefault();
           void (async () => {
             try {
-              await autoBackup();
+              await backupTo();
               closing = true;
               win.close();
             } catch (error) {
