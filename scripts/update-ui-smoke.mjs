@@ -6,6 +6,12 @@ import { resolve, join } from "node:path";
 import assert from "node:assert/strict";
 
 const require = createRequire(import.meta.url);
+const currentVersion = JSON.parse(
+  await fs.readFile("package.json", "utf8"),
+).version;
+const [major, minor, patch] = currentVersion.split(".").map(Number);
+const middleVersion = `${major}.${minor}.${patch + 1}`;
+const latestVersion = `${major}.${minor}.${patch + 2}`;
 const data = resolve(".test-data", "updates-current");
 const output = resolve("output", "playwright", "updates");
 await fs.rm(data, { recursive: true, force: true });
@@ -31,7 +37,12 @@ try {
   assert.equal(await button("检查更新").count(), 0);
 
   // Test-only main-process adapters exercise the real IPC bridge and update panel.
-  await app.evaluate(({ ipcMain, BrowserWindow }, servicePath) => {
+  await app.evaluate(({ ipcMain, BrowserWindow }, {
+    servicePath,
+    currentVersion,
+    middleVersion,
+    latestVersion,
+  }) => {
     const require = process.getBuiltinModule("node:module").createRequire(servicePath);
     const { EventEmitter } = require("node:events");
     const { UpdateService } = require(servicePath);
@@ -41,9 +52,9 @@ try {
     adapter.checkForUpdates = async () => {
       if (test.failCheck) throw new Error("simulated network outage");
       adapter.emit("update-available", {
-        version: "0.4.3",
+        version: latestVersion,
         releaseNotes:
-          '<h2>票迹 v0.4.3</h2><ul><li>批量核对</li><li>永久删除</li></ul><img src=x onerror="alert(1)"><script>alert(1)</script>\nSynthetic release notes',
+          `<h2>票迹 v${latestVersion}</h2><ul><li>批量核对</li><li>永久删除</li></ul><img src=x onerror="alert(1)"><script>alert(1)</script>\nSynthetic release notes`,
       });
     };
     adapter.downloadUpdate = async () => {
@@ -71,19 +82,19 @@ try {
           format: 1,
           releases: [
             {
-              version: "0.4.3",
+              version: latestVersion,
               added: ["按版本展示更新说明", "增加更新内容对话框"],
               fixed: [],
               changed: [],
             },
             {
-              version: "0.4.2",
+              version: middleVersion,
               added: [],
               fixed: ["更新说明 HTML 标签显示问题"],
               changed: ["更新说明改为纯文本渲染"],
             },
             {
-              version: "0.4.1",
+              version: currentVersion,
               added: ["不应显示的旧版本"],
               fixed: [],
               changed: [],
@@ -98,7 +109,12 @@ try {
       ipcMain.handle(name, handler);
     }
     test.ready = true;
-  }, resolve(".test-data/update-service.cjs"));
+  }, {
+    servicePath: resolve(".test-data/update-service.cjs"),
+    currentVersion,
+    middleVersion,
+    latestVersion,
+  });
   await navigate("发票台账");
   await navigate("数据与备份");
   await button("检查更新").click();
@@ -112,7 +128,7 @@ try {
   await notesDialog.waitFor();
   assert.deepEqual(
     await notesDialog.locator(".release-version h3").allTextContents(),
-    ["v0.4.3", "v0.4.2"],
+    [`v${latestVersion}`, `v${middleVersion}`],
   );
   assert.match(await notesDialog.innerText(), /按版本展示更新说明/);
   assert.match(await notesDialog.innerText(), /更新说明 HTML 标签显示问题/);
@@ -131,7 +147,10 @@ try {
     await notesDialog.innerText(),
     /暂时无法加载历史版本说明/,
   );
-  assert.match(await notesDialog.innerText(), /票迹 v0\.4\.3/);
+  assert.match(
+    await notesDialog.innerText(),
+    new RegExp(`票迹 v${latestVersion.replaceAll(".", "\\.")}`),
+  );
   assert.match(await notesDialog.innerText(), /• 批量核对/);
   assert.match(await notesDialog.innerText(), /Synthetic release notes/);
   await page.screenshot({
