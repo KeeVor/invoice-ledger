@@ -166,7 +166,7 @@ test("invalid snapshot database cannot replace the last automatic backup", async
   await withLedger(async (root, db) => {
     const old = await createAutoBackup(db, root);
     const oldBytes = await fs.readFile(old);
-    db.db.pragma("user_version = 2");
+    db.db.pragma("user_version = 3");
     await assert.rejects(createAutoBackup(db, root), /备份数据库校验失败/);
     assert.deepEqual(await fs.readdir(join(root, "backups")), [basename(old)]);
     assert.deepEqual(await fs.readFile(old), oldBytes);

@@ -245,6 +245,15 @@ function setupHandlers() {
     db.discardDraft(id.parse(value));
     dirty = true;
   });
+  handle("verify-drafts", (values, attribution) => {
+    writable();
+    const result = db.verifyDrafts(
+      z.array(id).min(1).max(5000).parse(values),
+      z.string().max(100).parse(attribution),
+    );
+    if (result.saved) dirty = true;
+    return result;
+  });
   handle("save-draft", (value, fields) => {
     writable();
     const result = db.saveDraft(id.parse(value), fields);
@@ -332,6 +341,7 @@ function setupHandlers() {
       ["销售方税号", "sellerTaxId", 24],
       ["票面项目", "itemName", 38],
       ["业务分类", "category", 20],
+      ["归属", "attribution", 24],
       ["不含税金额", "amount", 18],
       ["税额", "tax", 16],
       ["价税合计", "total", 18],
@@ -369,7 +379,7 @@ function setupHandlers() {
       fgColor: { argb: "FF173E36" },
     };
     sheet.getRow(1).height = 26;
-    sheet.autoFilter = { from: "A1", to: "R1" };
+    sheet.autoFilter = { from: "A1", to: "S1" };
     const summary = workbook.addWorksheet("分类汇总");
     summary.columns = [
       { header: "业务分类", key: "category", width: 25 },
@@ -398,7 +408,8 @@ function setupHandlers() {
     for (const text of [
       "导出范围与当前台账筛选一致。",
       "金额为票面金额，默认统计口径为价税合计；不代表收入、支出或已报销金额。",
-      `记录状态：${filter.archived ? "已归档记录" : "有效记录"}；月份：${filter.month || "全部"}；分类：${filter.category || "全部"}`,
+      `记录状态：${filter.archived ? "已归档记录" : "有效记录"}；月份：${filter.month || "全部"}；分类：${filter.category || "全部"}；归属：${filter.attribution === null ? "未标注" : filter.attribution || "全部"}`,
+      "归属为核对时人工填写的自由文本，按相同文字分组。",
       "每张发票按一个分类汇总，包含多个项目的发票未拆分统计。",
     ])
       note.addRow([text]);

@@ -21,10 +21,13 @@
     "test:smoke": "node scripts/smoke.mjs",
     "test:ui": "node scripts/ui-smoke.mjs",
     "test:package": "node scripts/check-package.mjs",
+    "clean": "node scripts/clean-artifacts.mjs --test --build",
+    "clean:test": "node scripts/clean-artifacts.mjs --test",
+    "clean:build": "node scripts/clean-artifacts.mjs --build",
     "python:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-python.ps1",
     "python:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-python.ps1",
-    "dist": "npm run build && npm run python:build && node scripts/licenses.mjs && electron-builder --win nsis --publish never",
-    "dist:dir": "npm run build && npm run python:build && node scripts/licenses.mjs && electron-builder --win --dir --publish never",
+    "dist": "node scripts/clean-artifacts.mjs --release-before && npm run build && npm run python:build && node scripts/licenses.mjs && electron-builder --win nsis --publish never && node scripts/clean-artifacts.mjs --release-after",
+    "dist:dir": "node scripts/clean-artifacts.mjs --release-before && npm run build && npm run python:build && node scripts/licenses.mjs && electron-builder --win --dir --publish never && node scripts/clean-artifacts.mjs --release-dir-after",
     "postinstall": "node -e \"require('better-sqlite3')(':memory:').close()\"",
     "test:updates:ui": "node scripts/update-ui-smoke.mjs"
   },
@@ -73,7 +76,7 @@
       "winCodeSign": "1.0.0"
     },
     "directories": {
-      "output": "release/v${version}",
+      "output": "release/current",
       "buildResources": "build"
     },
     "files": [

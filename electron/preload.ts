@@ -42,6 +42,8 @@ const api: LedgerAPI = {
   },
   drafts: () => ipcRenderer.invoke("drafts"),
   discardDraft: (id) => ipcRenderer.invoke("discard-draft", id),
+  verifyDrafts: (ids, attribution) =>
+    ipcRenderer.invoke("verify-drafts", ids, attribution),
   saveDraft: (id, fields) => ipcRenderer.invoke("save-draft", id, fields),
   checkDuplicate: (number, code) =>
     ipcRenderer.invoke("check-duplicate", number, code),

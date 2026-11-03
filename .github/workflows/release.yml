@@ -30,7 +30,7 @@ jobs:
           $version = (Get-Content package.json | ConvertFrom-Json).version
           if ($env:GITHUB_REF -ne "refs/tags/v$version") { throw 'Run release from the matching version tag' }
           "RELEASE_TAG=v$version" >> $env:GITHUB_ENV
-          "RELEASE_DIR=release/v$version" >> $env:GITHUB_ENV
+          "RELEASE_DIR=release/current" >> $env:GITHUB_ENV
       - run: npm ci
       - run: npm exec -- install-electron
       - run: npm run python:setup

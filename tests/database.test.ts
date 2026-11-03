@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs/promises";
+import { resolve } from "node:path";
+import Database from "better-sqlite3";
 import { LedgerDB, validateFields } from "../electron/database";
 import type { Fields } from "../src/types";
 
@@ -15,6 +18,7 @@ const fields: Fields = {
   sellerTaxId: "",
   itemName: "物业管理费",
   category: "物业费",
+  attribution: "测试归属",
   amountCents: 1227310,
   taxCents: 73639,
   totalCents: 1300949,
@@ -77,6 +81,87 @@ test("digital identity ignores irrelevant legacy code", () => {
     );
   } finally {
     db.close();
+  }
+});
+test("batch verification applies attribution and reports per-invoice failures", () => {
+  const { db, add } = fixture();
+  try {
+    const existing = db.saveDraft(add(), fields).id!;
+    const valid = add({
+      ...fields,
+      invoiceNumber: "20000000000000000002",
+    });
+    const duplicate = add(fields);
+    const invalid = add({
+      ...fields,
+      invoiceNumber: "20000000000000000003",
+      totalCents: 1,
+    });
+    const result = db.verifyDrafts(
+      [valid, duplicate, invalid, valid],
+      "  新批次  ",
+    );
+    assert.equal(result.saved, 1);
+    assert.equal(result.failed.length, 2);
+    assert.match(result.failed[0].message, /已在台账中/);
+    assert.match(result.failed[1].message, /价税合计/);
+    assert.equal(db.drafts().length, 2);
+    const saved = db.list({ attribution: "新批次" }).items[0];
+    assert.equal(saved.attribution, "新批次");
+    assert.equal(saved.id === existing, false);
+    assert.deepEqual(
+      db
+        .stats()
+        .attributions.map(({ attribution, count, totalCents }) => ({
+          attribution,
+          count,
+          totalCents,
+        }))
+        .sort((a, b) => a.attribution.localeCompare(b.attribution)),
+      [
+        { attribution: "测试归属", count: 1, totalCents: 1300949 },
+        { attribution: "新批次", count: 1, totalCents: 1300949 },
+      ],
+    );
+    assert.equal(db.list({ attribution: null }).total, 0);
+  } finally {
+    db.close();
+  }
+});
+test("version 1 databases gain an empty attribution column without data loss", async () => {
+  const path = resolve(".test-data", `${randomUUID()}.db`);
+  let db = new LedgerDB(path);
+  try {
+    const documentId = randomUUID();
+    db.addDocument({
+      id: documentId,
+      originalName: "legacy.pdf",
+      storedPath: "originals/legacy.pdf",
+      sha256: "legacy",
+    });
+    db.saveDraft(
+      db.addDraft(documentId, 1, "previews/legacy.png", {
+        ...fields,
+        attribution: "",
+      }),
+      { ...fields, attribution: "" },
+    );
+    db.close();
+    const legacy = new Database(path);
+    legacy.exec(
+      "ALTER TABLE invoices DROP COLUMN attribution; PRAGMA user_version = 1;",
+    );
+    legacy.close();
+    db = new LedgerDB(path);
+    assert.equal(db.db.pragma("user_version", { simple: true }), 2);
+    assert.equal(db.list({}).items[0].attribution, "");
+    assert.equal(db.list({ attribution: null }).total, 1);
+  } finally {
+    try {
+      db.close();
+    } catch {}
+    for (const suffix of ["", "-wal", "-shm"])
+      await fs.rm(`${path}${suffix}`, { force: true });
   }
 });
 test("archived invoice remains duplicate and can be restored", () => {

@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { load } from "js-yaml";
 
 const { version } = JSON.parse(await fs.readFile("package.json", "utf8"));
-const root = `release/v${version}`;
+const root = "release/current";
 const name = `Piaoji-Setup-${version}.exe`;
 const info = load(await fs.readFile(join(root, "latest.yml"), "utf8"));
 assert.equal(info.version, version);

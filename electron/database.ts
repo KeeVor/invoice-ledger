@@ -10,6 +10,7 @@ import type {
   Stats,
   StatsDateBasis,
   AmountTotals,
+  BatchDraftResult,
 } from "../src/types";
 
 export const CATEGORIES = [
@@ -26,7 +27,25 @@ export const CATEGORIES = [
   "多类目 / 待拆分",
   "其他",
 ];
+export const SCHEMA_VERSION = 2;
 const text = (max: number) => z.string().trim().max(max);
+const fieldNames: Record<string, string> = {
+  invoiceNumber: "发票号码",
+  invoiceCode: "发票代码",
+  invoiceDate: "开票日期",
+  invoiceType: "发票类型",
+  buyerName: "购买方名称",
+  sellerName: "销售方名称",
+  buyerTaxId: "购买方税号",
+  sellerTaxId: "销售方税号",
+  itemName: "票面项目",
+  category: "业务分类",
+  attribution: "归属",
+  notes: "备注",
+  amountCents: "不含税金额",
+  taxCents: "税额",
+  totalCents: "价税合计",
+};
 export const fieldsSchema = z
   .object({
     invoiceNumber: text(30)
@@ -55,6 +74,7 @@ export const fieldsSchema = z
     sellerTaxId: text(30),
     itemName: text(1000),
     category: text(100).min(1, "请选择分类"),
+    attribution: text(100).optional().default(""),
     notes: text(4000),
     amountCents: z.number().int().min(-1e14).max(1e14),
     taxCents: z.number().int().min(-1e14).max(1e14),
@@ -77,7 +97,18 @@ export const fieldsSchema = z
 export function validateFields(input: unknown): Fields {
   const r = fieldsSchema.safeParse(input);
   if (!r.success)
-    throw new Error(r.error.issues.map((i) => i.message).join("；"));
+    throw new Error(
+      Array.from(
+        new Set(
+          r.error.issues.map((issue) => {
+            const field = String(issue.path[0] ?? "");
+            if (issue.code === "invalid_type")
+              return `${fieldNames[field] ?? "字段"}未填写或格式不正确`;
+            return issue.message;
+          }),
+        ),
+      ).join("；"),
+    );
   return r.data;
 }
 export function identity(number: string, code: string) {
@@ -93,6 +124,7 @@ export const filterSchema = z.object({
     .or(z.literal(""))
     .optional(),
   category: text(100).optional(),
+  attribution: text(100).nullable().optional(),
   archived: z.boolean().optional(),
   page: z.number().int().min(1).max(100000).optional(),
 });
@@ -107,6 +139,7 @@ const columns = [
   "sellerTaxId",
   "itemName",
   "category",
+  "attribution",
   "amountCents",
   "taxCents",
   "totalCents",
@@ -121,7 +154,7 @@ export class LedgerDB {
     this.db.pragma("foreign_keys = ON");
     this.db.pragma("busy_timeout = 5000");
     const version = this.db.pragma("user_version", { simple: true }) as number;
-    if (version > 1) {
+    if (version > 2) {
       this.db.close();
       throw new Error("数据库来自更新版本，请升级软件后打开");
     }
@@ -133,7 +166,7 @@ export class LedgerDB {
         id TEXT PRIMARY KEY, identity TEXT NOT NULL UNIQUE, documentId TEXT NOT NULL REFERENCES documents(id), page INTEGER NOT NULL, previewPath TEXT NOT NULL,
         invoiceNumber TEXT NOT NULL, invoiceCode TEXT NOT NULL, invoiceDate TEXT NOT NULL, invoiceType TEXT NOT NULL,
         buyerName TEXT NOT NULL, sellerName TEXT NOT NULL, buyerTaxId TEXT NOT NULL, sellerTaxId TEXT NOT NULL,
-        itemName TEXT NOT NULL, category TEXT NOT NULL, amountCents INTEGER NOT NULL, taxCents INTEGER NOT NULL, totalCents INTEGER NOT NULL,
+        itemName TEXT NOT NULL, category TEXT NOT NULL, attribution TEXT NOT NULL DEFAULT '', amountCents INTEGER NOT NULL, taxCents INTEGER NOT NULL, totalCents INTEGER NOT NULL,
         notes TEXT NOT NULL, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL, archived INTEGER NOT NULL DEFAULT 0,
         CHECK(amountCents + taxCents = totalCents)
       );
@@ -141,8 +174,15 @@ export class LedgerDB {
       CREATE INDEX IF NOT EXISTS idx_invoice_category ON invoices(category);
       CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, kind TEXT NOT NULL, target TEXT NOT NULL, detail TEXT NOT NULL, createdAt TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      PRAGMA user_version = 1;
     `);
+    const invoiceColumns = this.db.pragma("table_info(invoices)") as {
+      name: string;
+    }[];
+    if (!invoiceColumns.some((column) => column.name === "attribution"))
+      this.db.exec(
+        "ALTER TABLE invoices ADD COLUMN attribution TEXT NOT NULL DEFAULT ''",
+      );
+    this.db.pragma("user_version = 2");
   }
   close() {
     this.db.close();
@@ -214,6 +254,7 @@ export class LedgerDB {
       const fields = JSON.parse(payload);
       return {
         ...fields,
+        attribution: fields.attribution ?? "",
         ...r,
         duplicate:
           this.duplicate(fields.invoiceNumber, fields.invoiceCode) ?? undefined,
@@ -225,6 +266,45 @@ export class LedgerDB {
       this.db.prepare("DELETE FROM drafts WHERE id=?").run(id);
       this.event("discard-draft", id);
     })();
+  }
+  verifyDrafts(ids: string[], attribution: string): BatchDraftResult {
+    let saved = 0;
+    const failed: BatchDraftResult["failed"] = [];
+    for (const draftId of Array.from(new Set(ids))) {
+      const draft = this.db
+        .prepare(
+          "SELECT d.*,o.originalName FROM drafts d JOIN documents o ON o.id=d.documentId WHERE d.id=?",
+        )
+        .get(draftId) as any;
+      if (!draft) {
+        failed.push({
+          id: draftId,
+          name: "未知记录",
+          message: "待核对记录不存在，可能已保存或移除",
+        });
+        continue;
+      }
+      const fields = JSON.parse(draft.payload);
+      try {
+        const result = this.saveDraft(draftId, { ...fields, attribution });
+        if (result.duplicate) {
+          failed.push({
+            id: draftId,
+            name: `${draft.originalName} 第 ${draft.page} 页`,
+            message: "这张发票已在台账中，未重复保存",
+          });
+        } else {
+          saved++;
+        }
+      } catch (error) {
+        failed.push({
+          id: draftId,
+          name: `${draft.originalName} 第 ${draft.page} 页`,
+          message: error instanceof Error ? error.message : "记录校验失败",
+        });
+      }
+    }
+    return { saved, failed };
   }
   duplicate(number: string, code: string, exceptId = ""): Duplicate | null {
     if (!/^(\d{20}|\d{8})$/.test(number) || (number.length === 8 && !code))
@@ -340,9 +420,18 @@ export class LedgerDB {
       clauses.push("i.category=@category");
       params.category = filter.category;
     }
+    if (filter.attribution !== undefined) {
+      clauses.push(
+        filter.attribution === null
+          ? "TRIM(i.attribution)=''"
+          : "i.attribution=@attribution",
+      );
+      if (filter.attribution !== null)
+        params.attribution = filter.attribution;
+    }
     if (filter.search) {
       clauses.push(
-        "(i.invoiceNumber LIKE @search ESCAPE '\\' OR i.buyerName LIKE @search ESCAPE '\\' OR i.sellerName LIKE @search ESCAPE '\\' OR i.itemName LIKE @search ESCAPE '\\' OR i.notes LIKE @search ESCAPE '\\')",
+        "(i.invoiceNumber LIKE @search ESCAPE '\\' OR i.buyerName LIKE @search ESCAPE '\\' OR i.sellerName LIKE @search ESCAPE '\\' OR i.itemName LIKE @search ESCAPE '\\' OR i.attribution LIKE @search ESCAPE '\\' OR i.notes LIKE @search ESCAPE '\\')",
       );
       params.search = `%${filter.search.replace(/[\\%_]/g, "\\$&")}%`;
     }
@@ -397,6 +486,11 @@ export class LedgerDB {
       sellers: this.db
         .prepare(
           `SELECT sellerName,COUNT(*) AS count,${sums} FROM invoices WHERE ${where} GROUP BY sellerName ORDER BY totalCents DESC LIMIT 10`,
+        )
+        .all(params) as any,
+      attributions: this.db
+        .prepare(
+          `SELECT attribution,COUNT(*) AS count,${sums} FROM invoices WHERE ${where} GROUP BY attribution ORDER BY totalCents DESC`,
         )
         .all(params) as any,
       months: this.db

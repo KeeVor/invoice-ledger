@@ -6,8 +6,10 @@ import { resolve, join } from "node:path";
 import assert from "node:assert/strict";
 
 const require = createRequire(import.meta.url);
-const data = resolve(".test-data", `updates-${Date.now()}`);
+const data = resolve(".test-data", "updates-current");
 const output = resolve("output", "playwright", "updates");
+await fs.rm(data, { recursive: true, force: true });
+await fs.mkdir(data, { recursive: true });
 await fs.mkdir(output, { recursive: true });
 await build({ entryPoints: ["electron/updates.ts"], bundle: true, platform: "node", format: "cjs", outfile: ".test-data/update-service.cjs" });
 const env = { ...process.env, INVOICE_LEDGER_DATA_DIR: data };

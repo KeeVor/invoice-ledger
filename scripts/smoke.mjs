@@ -8,7 +8,9 @@ import ExcelJS from "exceljs";
 const require = createRequire(import.meta.url);
 const output = resolve("output", "smoke");
 await fs.mkdir(output, { recursive: true });
-const data = resolve(".test-data", `smoke-${Date.now()}`);
+const data = resolve(".test-data", "smoke-current");
+await fs.rm(data, { recursive: true, force: true });
+await fs.mkdir(data, { recursive: true });
 const samples = [process.env.SAMPLE_PDF, process.env.SAMPLE_IMAGE].filter(
   Boolean,
 );

@@ -2,6 +2,7 @@ import { _electron as electron } from "playwright-core";
 import { createRequire } from "node:module";
 import fs from "node:fs/promises";
 import { resolve, join } from "node:path";
+import { randomUUID } from "node:crypto";
 import assert from "node:assert/strict";
 
 const require = createRequire(import.meta.url);
@@ -9,12 +10,63 @@ const previous = JSON.parse(
   await fs.readFile("output/smoke/results.json", "utf8"),
 );
 assert.equal(previous.passed, true, "Run test:smoke first");
-const data = resolve(".test-data", `ui-${Date.now()}`);
+const data = resolve(".test-data", "ui-current");
 const output = resolve("output", "playwright", "glass-app");
+await fs.rm(data, { recursive: true, force: true });
 await fs.mkdir(data, { recursive: true });
 await fs.mkdir(output, { recursive: true });
 for (const name of ["invoices.db", "originals", "previews"]) {
   await fs.cp(join(previous.data, name), join(data, name), { recursive: true });
+}
+const batchDb = new (require("better-sqlite3"))(join(data, "invoices.db"));
+try {
+  const now = new Date().toISOString();
+  await fs.writeFile(join(data, "originals", "batch-a.pdf"), "batch-a");
+  await fs.writeFile(join(data, "previews", "batch-a.png"), "");
+  for (const [number, itemName, amount] of [
+    ["20000000000000000011", "批量办公用品甲", 10000],
+    ["20000000000000000012", "批量办公用品乙", 20000],
+  ]) {
+    const documentId = randomUUID();
+    const draftId = randomUUID();
+    batchDb
+      .prepare("INSERT INTO documents VALUES (?,?,?,?,?)")
+      .run(
+        documentId,
+        "批量核对.pdf",
+        "originals/batch-a.pdf",
+        documentId,
+        now,
+      );
+    batchDb
+      .prepare("INSERT INTO drafts VALUES (?,?,?,?,?,?)")
+      .run(
+        draftId,
+        documentId,
+        1,
+        "previews/batch-a.png",
+        JSON.stringify({
+          invoiceNumber: number,
+          invoiceCode: "",
+          invoiceDate: "2026-09-08",
+          invoiceType: "普通发票",
+          buyerName: "测试购买方",
+          sellerName: "测试销售方",
+          buyerTaxId: "",
+          sellerTaxId: "",
+          itemName,
+          category: "办公用品",
+          attribution: "",
+          amountCents: amount,
+          taxCents: 1300,
+          totalCents: amount + 1300,
+          notes: "",
+        }),
+        now,
+      );
+  }
+} finally {
+  batchDb.close();
 }
 const env = { ...process.env, INVOICE_LEDGER_DATA_DIR: data };
 delete env.ELECTRON_RUN_AS_NODE;
@@ -482,6 +534,69 @@ try {
       .getByRole("button", { name: "数据与备份", exact: true }),
   );
   await screenshot("settings");
+  await click(
+    page
+      .getByRole("navigation")
+      .getByRole("button", { name: /导入与核对/ }),
+  );
+  await page
+    .getByRole("textbox", { name: "批量归属", exact: true })
+    .fill("重复批次");
+  const modalScrollBefore = await page.evaluate(() => {
+    const root = document.getElementById("root");
+    root.scrollTop = 0;
+    const bodyStyle = getComputedStyle(document.body);
+    return {
+      scrollTop: root.scrollTop,
+      brandTop: document.querySelector(".brand").getBoundingClientRect().top,
+      headerTop: document.querySelector(".app-header").getBoundingClientRect().top,
+      bodyPaddingTop: bodyStyle.paddingTop,
+      bodyHeight: bodyStyle.height,
+      bodyOverflow: bodyStyle.overflow,
+    };
+  });
+  await page
+    .getByRole("checkbox", { name: "全选待核对", exact: true })
+    .check();
+  await click(button("一键全部核对"));
+  const batchDialog = page.getByRole("alertdialog", {
+    name: "一键核对全部发票？",
+    exact: true,
+  });
+  await batchDialog.waitFor();
+  const modalScrollAfter = await page.evaluate(() => {
+    const root = document.getElementById("root");
+    const bodyStyle = getComputedStyle(document.body);
+    return {
+      scrollTop: root.scrollTop,
+      brandTop: document.querySelector(".brand").getBoundingClientRect().top,
+      headerTop: document.querySelector(".app-header").getBoundingClientRect().top,
+      bodyPaddingTop: bodyStyle.paddingTop,
+      bodyHeight: bodyStyle.height,
+      bodyOverflow: bodyStyle.overflow,
+    };
+  });
+  assert.deepEqual(modalScrollAfter, modalScrollBefore);
+  await screenshot("batch-confirm");
+  await click(
+    batchDialog.getByRole("button", { name: "核对并保存", exact: true }),
+  );
+  await page.getByText("2 张发票未完成核对", { exact: true }).waitFor();
+  assert.equal(
+    (await page.evaluate(() => window.ledger.drafts())).length,
+    2,
+  );
+  assert.equal((await page.evaluate(() => window.ledger.stats())).count, 4);
+  await screenshot("batch-failures");
+  await click(button("统计汇总"));
+  await page.locator('.report-metrics[aria-busy="false"]').waitFor();
+  const attributionReport = page.getByRole("table", {
+    name: "按归属统计",
+    exact: true,
+  });
+  await attributionReport.waitFor();
+  assert.match(await attributionReport.innerText(), /重复批次[\s\S]*2 张/);
+  await screenshot("batch-attribution-report");
   assert.doesNotMatch(
     await page.locator("body").innerText(),
     /SQLite|OCR|Electron|数据库|识别引擎|npm\s|唯一索引|入库/,
@@ -511,6 +626,9 @@ try {
       "entry timestamp in invoice details",
       "invoice-time / local entry-time report switching, months and grouped totals",
       "compact monetary columns without overlapping text",
+      "batch verification keeps duplicate failures pending",
+      "batch success groups shared attribution in reports",
+      "dialogs do not scroll the background",
     ],
   };
   await fs.writeFile(

@@ -17,6 +17,8 @@
 
 不要手工修改 `latest.yml` 中的版本、路径、大小或 SHA512。元数据与安装包必须来自同一次构建。不要只上传安装包，否则旧版客户端无法发现更新。
 
+本地构建输出固定为 `release/current`。`npm run dist` 在构建前清理旧版本目录、`python-build` 和 `python-dist`，发布包生成后再清理 `win-unpacked` 与 Python 中间产物，只保留安装包、blockmap、`latest.yml`、`SHA256SUMS.txt` 和少量构建元数据。需要 `win-unpacked` 做打包检查时，运行 `npm run dist:dir`。
+
 工作流使用仓库自带的 `GITHUB_TOKEN`，权限仅为发布需要的 `contents: write`；应用内没有 GitHub 令牌，也不需要用户登录 GitHub。可通过 Actions 页面重跑失败的标签构建。公开后的同版本资产不得覆盖；修复应发布更高版本。
 
 ## 客户端行为

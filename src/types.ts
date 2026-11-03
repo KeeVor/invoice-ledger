@@ -9,6 +9,7 @@ export type Fields = {
   sellerTaxId: string;
   itemName: string;
   category: string;
+  attribution: string;
   amountCents: number | null;
   taxCents: number | null;
   totalCents: number | null;
@@ -40,10 +41,20 @@ export type Invoice = Fields & {
   updatedAt: string;
   archived: number;
 };
+export type BatchDraftFailure = {
+  id: string;
+  name: string;
+  message: string;
+};
+export type BatchDraftResult = {
+  saved: number;
+  failed: BatchDraftFailure[];
+};
 export type Filter = {
   search?: string;
   month?: string;
   category?: string;
+  attribution?: string | null;
   archived?: boolean;
   page?: number;
 };
@@ -60,6 +71,7 @@ export type Stats = AmountTotals & {
   categories: (AmountTotals & { category: string; count: number })[];
   months: (AmountTotals & { month: string; count: number })[];
   sellers: (AmountTotals & { sellerName: string; count: number })[];
+  attributions: (AmountTotals & { attribution: string; count: number })[];
 };
 export type AppInfo = {
   version: string;
@@ -119,6 +131,7 @@ export interface LedgerAPI {
   onNotice(callback: (message: string) => void): () => void;
   drafts(): Promise<Draft[]>;
   discardDraft(id: string): Promise<void>;
+  verifyDrafts(ids: string[], attribution: string): Promise<BatchDraftResult>;
   saveDraft(
     id: string,
     fields: Fields,

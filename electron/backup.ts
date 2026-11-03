@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { ZipFile } from "yazl";
 import yauzl from "yauzl";
 import Database from "better-sqlite3";
-import type { LedgerDB } from "./database";
+import { SCHEMA_VERSION, type LedgerDB } from "./database";
 
 export function within(root: string, path: string) {
   const resolved = resolve(root, path),
@@ -140,7 +140,9 @@ export async function unpackBackup(source: string, destination: string) {
   try {
     if (
       check.pragma("integrity_check", { simple: true }) !== "ok" ||
-      check.pragma("user_version", { simple: true }) !== 1
+      ![1, SCHEMA_VERSION].includes(
+        check.pragma("user_version", { simple: true }) as number,
+      )
     )
       throw new Error("备份数据库校验失败");
     if ((check.pragma("foreign_key_check") as any[]).length)

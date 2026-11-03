@@ -61,14 +61,14 @@
 }
 body {
   margin: 0;
-  padding-top: var(--titlebar-height);
   height: 100dvh;
   overflow: hidden;
   min-width: 360px;
   -webkit-font-smoothing: antialiased;
 }
 #root {
-  height: 100%;
+  height: calc(100% - var(--titlebar-height));
+  margin-top: var(--titlebar-height);
   overflow: auto;
 }
 body::before {
@@ -629,6 +629,7 @@ small {
 .filters {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 9px;
   padding: 6px 22px 18px;
 }
@@ -770,6 +771,20 @@ td small {
   font-size: 12px;
   font-weight: 500;
   color: #2d4b69;
+}
+.attribution-chip {
+  display: inline-block;
+  max-width: 100%;
+  margin-top: 5px;
+  padding: 3px 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid #68a0d04d;
+  border-radius: 6px;
+  background: #e9f5ff8a;
+  color: #426b97;
+  font-size: 9px;
 }
 .category-tag {
   display: inline-block;
@@ -1190,6 +1205,82 @@ td small {
 .queue-panel {
   margin-top: 20px;
 }
+.batch-toolbar {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 0 22px 12px;
+}
+.batch-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  color: #4e6e89;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.batch-check input,
+.draft-select input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #3978e4;
+}
+.batch-attribution {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 220px;
+}
+.batch-attribution > span {
+  color: #58758e;
+  font-size: 10px;
+}
+.batch-attribution input {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid #ffffffa6;
+  border-radius: 11px;
+  outline: none;
+  background: #ffffff57;
+  color: var(--ink);
+  font-size: 11px;
+}
+.batch-attribution input:focus {
+  outline: 3px solid #3479ec70;
+  outline-offset: 1px;
+  background: #ffffff82;
+}
+.batch-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.batch-tip {
+  padding: 0 22px 13px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.7;
+}
+.batch-failures {
+  max-height: 190px;
+  margin: 0 22px 14px;
+  overflow: auto;
+}
+.batch-failures b {
+  color: #744f27;
+  font-weight: 600;
+}
+.draft-select {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 24px;
+}
 .queue-empty,
 .report-empty {
   display: flex;
@@ -1357,6 +1448,21 @@ td small {
 }
 .report-card {
   margin-bottom: 21px;
+}
+.attribution-report .monthly-table-wrap table {
+  min-width: 760px;
+}
+.attribution-name {
+  display: inline-block;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.attribution-name.muted {
+  color: var(--muted);
+  font-weight: 400;
 }
 .bar-list {
   padding: 10px 24px 28px;
@@ -2764,6 +2870,24 @@ input[type="checkbox"]:checked::after {
   .draft-row {
     flex-wrap: wrap;
     gap: 12px;
+  }
+  .batch-toolbar {
+    align-items: stretch;
+    padding: 0 17px 12px;
+  }
+  .batch-attribution {
+    order: 3;
+    flex-basis: 100%;
+  }
+  .batch-actions {
+    flex-wrap: wrap;
+    margin-left: auto;
+  }
+  .batch-tip {
+    padding: 0 17px 12px;
+  }
+  .batch-failures {
+    margin: 0 17px 14px;
   }
   .draft-name {
     flex-basis: 65%;

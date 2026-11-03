@@ -9,14 +9,14 @@ npm run test:python
 npm run test:updates:ui
 ```
 
-- TypeScript 单元测试覆盖号码身份、归档查重、金额精度、字段与日期校验、搜索与筛选、跨页合计、首次录入时间、两种统计口径、备份路径与完整性、单份备份轮换、失败保留旧备份、旧版备份清理、手动备份保护、提示文案、更新状态及安装前置条件。
+- TypeScript 单元测试覆盖号码身份、归档查重、金额精度、字段与日期校验、搜索与筛选、跨页合计、首次录入时间、两种统计口径、归属分组、批量核对逐条失败、数据库迁移、备份路径与完整性、单份备份轮换、失败保留旧备份、旧版备份清理、手动备份保护、提示文案、更新状态及安装前置条件。
 - Python 测试覆盖金额、日期、号码歧义、银行账号误判防护、购销方、免税、分类和税号校验。它们不加载真实 OCR 模型，不是识别准确率基准。
 - 更新桌面测试使用独立 `.test-data/` 账本，验证真实 preload IPC 和界面；下载与安装使用测试适配器。覆盖开发环境禁用、手动下载、版本说明不执行 HTML、取消安装、安装条件不满足时阻止安装、确认安装及 1000×740 布局。不会访问正式账本或启动安装程序。
 - CI 在 Windows 上运行这些检查；Release 工作流额外构建识别程序和安装包，校验 `latest.yml`、文件大小与 SHA512，并生成 SHA256 校验文件。
 
 ## 业务集成测试
 
-`scripts/smoke.mjs`、`scripts/ui-smoke.mjs` 和 `scripts/check-package.mjs` 保留完整导入、核对、导出、备份恢复及打包测试。Smoke 额外检查恢复不创建额外备份，以及正常退出后仅保留 1 份自动备份并清理旧版备份。公开版本使用虚构发票号码，不包含真实票据文件。
+`scripts/smoke.mjs`、`scripts/ui-smoke.mjs` 和 `scripts/check-package.mjs` 保留完整导入、核对、导出、备份恢复及打包测试。桌面测试额外覆盖多选、批量归属、一键核对、重复票逐条拦截和归属统计。Smoke 额外检查恢复不创建额外备份，以及正常退出后仅保留 1 份自动备份并清理旧版备份。公开版本使用虚构发票号码，不包含真实票据文件。
 
 运行以下命令生成虚构 PDF 和图片（依赖开发环境中的 Pillow 和 Windows 微软雅黑字体）：
 
@@ -38,10 +38,11 @@ $env:SAMPLE_PDF = (Resolve-Path .test-data/synthetic-samples/invoice.pdf).Path
 $env:SAMPLE_IMAGE = (Resolve-Path .test-data/synthetic-samples/invoice.png).Path
 npm run test:smoke
 npm run test:ui
+npm run dist:dir
 npm run test:package
 ```
 
-`test:ui` 复制已通过 smoke 的隔离账本，不操作正式数据。现有 `test:package` 的实际 EXE 启动检查会只读访问正式账本，因此应先退出正在运行的票迹；使用 `--worker-only` 可以跳过启动，但不能视为完整 EXE 验证。不要把私有票据或测试输出提交到公开仓库。
+`test:ui` 复制已通过 smoke 的隔离账本，不操作正式数据。测试账本使用固定的 `.test-data/smoke-current`、`ui-current` 和 `updates-current`，每次运行前覆盖旧结果，不再生成无限增长的时间戳目录；需要主动清理时运行 `npm run clean:test`。现有 `test:package` 的实际 EXE 启动检查会只读访问正式账本，因此应先退出正在运行的票迹；使用 `--worker-only` 可以跳过启动，但不能视为完整 EXE 验证。不要把私有票据或测试输出提交到公开仓库。
 
 ## 验证边界
 

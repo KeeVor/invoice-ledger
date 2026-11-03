@@ -7,7 +7,7 @@ import { extractFile } from "@electron/asar";
 
 const { version } = JSON.parse(await fs.readFile("package.json", "utf8"));
 const packageRoot = resolve(
-  process.env.PACKAGE_DIR || `release/v${version}/win-unpacked`,
+  process.env.PACKAGE_DIR || "release/current/win-unpacked",
 );
 const executable = join(packageRoot, "票迹.exe");
 const worker = resolve(packageRoot, "resources", "ocr", "invoice-worker.exe");

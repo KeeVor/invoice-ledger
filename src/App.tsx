@@ -60,12 +60,14 @@ import type {
   StatsDateBasis,
   AmountTotals,
   ConfirmationRequest,
+  BatchDraftFailure,
 } from "./types";
 
 type Page = "ledger" | "inbox" | "reports" | "settings";
 type Selection =
   | { kind: "draft"; value: Draft }
   | { kind: "invoice"; value: Invoice };
+type BatchConfirmation = { ids: string[]; all: boolean };
 const money = (cents: number | null | undefined) =>
   cents == null
     ? "—"
@@ -96,6 +98,13 @@ export default function App() {
   const [ledgerStats, setLedgerStats] = useState<Stats>();
   const [confirmation, setConfirmation] = useState<ConfirmationRequest>();
   const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [selectedDrafts, setSelectedDrafts] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [batchAttribution, setBatchAttribution] = useState("");
+  const [batchConfirm, setBatchConfirm] = useState<BatchConfirmation>();
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchFailures, setBatchFailures] = useState<BatchDraftFailure[]>([]);
   const [filter, setFilter] = useState<Filter>({ page: 1 });
   const [rows, setRows] = useState<Invoice[]>([]);
   const [total, setTotal] = useState(0);
@@ -284,6 +293,46 @@ export default function App() {
       notify(errorText(e), true);
     }
   }
+  const selectedDraftList = drafts.filter((draft) =>
+    selectedDrafts.has(draft.id),
+  );
+  const allDraftsSelected =
+    drafts.length > 0 && selectedDraftList.length === drafts.length;
+  function requestBatch(ids: string[], all = false) {
+    const unique = Array.from(new Set(ids));
+    if (!unique.length) return;
+    setBatchFailures([]);
+    setBatchConfirm({ ids: unique, all });
+  }
+  async function verifyBatch() {
+    if (!batchConfirm || batchBusy) return;
+    setBatchBusy(true);
+    try {
+      const result = await window.ledger.verifyDrafts(
+        batchConfirm.ids,
+        batchAttribution,
+      );
+      setBatchFailures(result.failed);
+      setSelectedDrafts(new Set(result.failed.map((failure) => failure.id)));
+      if (result.saved && !result.failed.length) {
+        setBatchAttribution("");
+        notify(`已核对并保存 ${result.saved} 张发票`);
+      } else if (result.saved) {
+        notify(
+          `已保存 ${result.saved} 张，另有 ${result.failed.length} 张未通过校验`,
+          true,
+        );
+      } else {
+        notify("没有发票通过校验，请查看失败原因", true);
+      }
+      setBatchConfirm(undefined);
+      refresh();
+    } catch (error) {
+      notify(errorText(error), true);
+    } finally {
+      setBatchBusy(false);
+    }
+  }
   async function exportExcel() {
     setBusy(true);
     try {
@@ -314,12 +363,35 @@ export default function App() {
   }
   const setQuery = (patch: Filter) =>
     setFilter((f) => ({ ...f, ...patch, page: 1 }));
+  const attributionFilterValue =
+    filter.attribution === undefined
+      ? ""
+      : filter.attribution === null
+        ? "__unassigned__"
+        : filter.attribution;
+  const attributionOptions = [
+    { value: "", label: "全部归属" },
+    ...Array.from(
+      new Set([
+        ...(ledgerStats?.attributions ?? [])
+          .map((group) => group.attribution)
+          .filter(Boolean),
+        ...(filter.attribution ? [filter.attribution] : []),
+      ]),
+    ).map((attribution) => ({ value: attribution, label: attribution })),
+    { value: "__unassigned__", label: "未标注" },
+  ];
   const hasFilter = !!(
     filter.search ||
     filter.month ||
     filter.category ||
+    filter.attribution !== undefined ||
     filter.archived
   );
+  function viewAttribution(attribution: string) {
+    setFilter({ attribution: attribution || null, page: 1 });
+    setPage("ledger");
+  }
 
   return (
     <TooltipProvider delayDuration={450} skipDelayDuration={120}>
@@ -487,7 +559,11 @@ export default function App() {
                     <section className="ledger-panel">
                       <div className="panel-heading">
                         <h2>
-                          {filter.archived ? "归档记录" : "全部记录"}{" "}
+                          {filter.archived
+                            ? "归档记录"
+                            : filter.attribution !== undefined
+                              ? `归属 · ${filter.attribution ?? "未标注"}`
+                              : "全部记录"}{" "}
                           <span>{total}</span>
                         </h2>
                         <div className="safe-label">
@@ -500,7 +576,7 @@ export default function App() {
                           <Search size={17} />
                           <input
                             aria-label="搜索发票"
-                            placeholder="搜索票号、单位、项目或备注…"
+                            placeholder="搜索票号、单位、项目、归属或备注…"
                             autoComplete="off"
                             spellCheck={false}
                             value={filter.search ?? ""}
@@ -520,6 +596,21 @@ export default function App() {
                               label: category,
                             })),
                           ]}
+                        />
+                        <GlassSelect
+                          label="归属筛选"
+                          value={attributionFilterValue}
+                          onChange={(value) =>
+                            setQuery({
+                              attribution:
+                                value === ""
+                                  ? undefined
+                                  : value === "__unassigned__"
+                                    ? null
+                                    : value,
+                            })
+                          }
+                          options={attributionOptions}
                         />
                         <button
                           className="button secondary small export-button"
@@ -618,6 +709,11 @@ export default function App() {
                                   <small title={r.itemName}>
                                     {r.itemName || "未填写项目"}
                                   </small>
+                                  {r.attribution && (
+                                    <span className="attribution-chip">
+                                      归属 · {r.attribution}
+                                    </span>
+                                  )}
                                 </td>
                                 <td>
                                   <span
@@ -888,48 +984,145 @@ export default function App() {
                       <p>导入后，识别结果会出现在这里。关闭软件也会保留。</p>
                     </div>
                   ) : (
-                    <div className="draft-list">
-                      {drafts.map((d) => (
-                        <div className="draft-row" key={d.id}>
-                          <div
-                            className={`draft-icon ${d.duplicate ? "duplicate" : ""}`}
-                          >
-                            {d.duplicate ? (
-                              <ShieldX size={23} />
-                            ) : (
-                              <FileText size={23} />
-                            )}
-                          </div>
-                          <div className="draft-name">
-                            <strong title={d.originalName}>
-                              {d.originalName}
-                            </strong>
-                            <span>
-                              {d.invoiceNumber || "号码待填写"} <i>·</i> 第{" "}
-                              {d.page} 页
-                            </span>
-                          </div>
-                          <div className="draft-amount">
-                            ¥ {money(d.totalCents)}
-                            <small>{d.category}</small>
-                          </div>
-                          <span
-                            className={`state-pill ${d.duplicate ? "danger" : "amber"}`}
-                          >
-                            {d.duplicate ? "已记录，请勿重复保存" : "请核对"}
+                    <>
+                      <div className="batch-toolbar">
+                        <label className="batch-check">
+                          <input
+                            type="checkbox"
+                            checked={allDraftsSelected}
+                            onChange={() =>
+                              setSelectedDrafts(
+                                allDraftsSelected
+                                  ? new Set()
+                                  : new Set(drafts.map((draft) => draft.id)),
+                              )
+                            }
+                          />
+                          <span>
+                            {allDraftsSelected ? "取消全选" : "全选待核对"}
                           </span>
+                        </label>
+                        <label className="batch-attribution">
+                          <span>本批归属</span>
+                          <input
+                            aria-label="批量归属"
+                            value={batchAttribution}
+                            maxLength={100}
+                            placeholder="例如：项目名称或客户名称（选填）"
+                            onChange={(event) =>
+                              setBatchAttribution(event.target.value)
+                            }
+                          />
+                        </label>
+                        <div className="batch-actions">
                           <button
                             className="button secondary small"
+                            disabled={!selectedDraftList.length || batchBusy}
                             onClick={() =>
-                              setSelection({ kind: "draft", value: d })
+                              requestBatch(
+                                selectedDraftList.map((draft) => draft.id),
+                              )
                             }
                           >
-                            核对
-                            <ArrowRight size={14} />
+                            核对所选
+                            {selectedDraftList.length
+                              ? ` (${selectedDraftList.length})`
+                              : ""}
+                          </button>
+                          <button
+                            className="button primary small"
+                            disabled={!drafts.length || batchBusy}
+                            onClick={() =>
+                              requestBatch(
+                                drafts.map((draft) => draft.id),
+                                true,
+                              )
+                            }
+                          >
+                            <FileCheck2 size={15} />
+                            一键全部核对
                           </button>
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                      <div className="batch-tip">
+                        一键核对会接受当前识别字段并直接入账；重复票、缺失号码或金额不平的记录会被跳过。
+                      </div>
+                      {!!batchFailures.length && (
+                        <div className="error-panel batch-failures" role="alert">
+                          <strong>
+                            {batchFailures.length} 张发票未完成核对
+                          </strong>
+                          {batchFailures.map((failure) => (
+                            <p key={failure.id}>
+                              <b>{failure.name}</b>：{failure.message}
+                            </p>
+                          ))}
+                          <button
+                            className="text-button"
+                            onClick={() => setBatchFailures([])}
+                          >
+                            收起
+                          </button>
+                        </div>
+                      )}
+                      <div className="draft-list">
+                        {drafts.map((d) => (
+                          <div className="draft-row" key={d.id}>
+                            <label className="draft-select">
+                              <input
+                                type="checkbox"
+                                aria-label={`选择发票 ${d.invoiceNumber || d.originalName} 第 ${d.page} 页`}
+                                checked={selectedDrafts.has(d.id)}
+                                onChange={(event) =>
+                                  setSelectedDrafts((current) => {
+                                    const next = new Set(current);
+                                    if (event.target.checked) next.add(d.id);
+                                    else next.delete(d.id);
+                                    return next;
+                                  })
+                                }
+                              />
+                            </label>
+                            <div
+                              className={`draft-icon ${d.duplicate ? "duplicate" : ""}`}
+                            >
+                              {d.duplicate ? (
+                                <ShieldX size={23} />
+                              ) : (
+                                <FileText size={23} />
+                              )}
+                            </div>
+                            <div className="draft-name">
+                              <strong title={d.originalName}>
+                                {d.originalName}
+                              </strong>
+                              <span>
+                                {d.invoiceNumber || "号码待填写"} <i>·</i> 第{" "}
+                                {d.page} 页
+                              </span>
+                            </div>
+                            <div className="draft-amount">
+                              ¥ {money(d.totalCents)}
+                              <small>{d.category}</small>
+                            </div>
+                            <span
+                              className={`state-pill ${d.duplicate ? "danger" : "amber"}`}
+                            >
+                              {d.duplicate ? "已记录，请勿重复保存" : "请核对"}
+                            </span>
+                            <button
+                              className="button secondary small"
+                              onClick={() =>
+                                setSelection({ kind: "draft", value: d })
+                              }
+                            >
+                              核对
+                              <ArrowRight size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </>
                   )}
                 </section>
               </>
@@ -1074,6 +1267,75 @@ export default function App() {
                     )}
                   </section>
                 </div>
+                <section className="report-card attribution-report">
+                  <div className="panel-heading">
+                    <h2>按归属</h2>
+                    <span className="subtle">
+                      核对时人工填写 · 点击查看对应项目明细
+                    </span>
+                  </div>
+                  {report?.attributions.length ? (
+                    <div className="monthly-table-wrap">
+                      <table aria-label="按归属统计">
+                        <thead>
+                          <tr>
+                            <th>归属</th>
+                            <th>发票数量</th>
+                            <th className="align-right">不含税金额</th>
+                            <th className="align-right">税额</th>
+                            <th className="align-right">价税合计</th>
+                            <th className="align-right">操作</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {report.attributions.map((r) => (
+                            <tr key={r.attribution || "__unassigned__"}>
+                              <td>
+                                <span
+                                  className={
+                                    r.attribution
+                                      ? "attribution-name"
+                                      : "attribution-name muted"
+                                  }
+                                >
+                                  {r.attribution || "未标注"}
+                                </span>
+                              </td>
+                              <td>{r.count} 张</td>
+                              <td
+                                className={`amount align-right ${r.amountCents < 0 ? "negative" : ""}`}
+                              >
+                                ¥ {money(r.amountCents)}
+                              </td>
+                              <td
+                                className={`amount align-right ${r.taxCents < 0 ? "negative" : ""}`}
+                              >
+                                ¥ {money(r.taxCents)}
+                              </td>
+                              <td
+                                className={`amount align-right ${r.totalCents < 0 ? "negative" : ""}`}
+                              >
+                                ¥ {money(r.totalCents)}
+                              </td>
+                              <td className="align-right">
+                                <button
+                                  className="text-button"
+                                  onClick={() =>
+                                    viewAttribution(r.attribution)
+                                  }
+                                >
+                                  查看明细
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <EmptyReport />
+                  )}
+                </section>
                 <section className="report-card monthly">
                   <div className="panel-heading">
                     <h2>月度记录</h2>
@@ -1128,7 +1390,7 @@ export default function App() {
                   <span>
                     {reportDateBasis === "createdAt" &&
                       "录入时间以首次核对并保存为准，按本机时区统计；后续修改不改变录入时间。"}
-                    此处汇总发票金额，不区分收入与支出，也不代表利润或已报销金额。每张发票按一个分类统计。
+                    此处汇总发票金额，不区分收入与支出，也不代表利润或已报销金额。归属按核对时填写的相同文字分组。
                   </span>
                 </div>
               </>
@@ -1270,6 +1532,22 @@ export default function App() {
                 .catch((error) => notify(errorText(error), true));
             setConfirmation(undefined);
           }}
+        />
+        <ConfirmDialog
+          open={!!batchConfirm}
+          busy={batchBusy}
+          title={
+            batchConfirm?.all ? "一键核对全部发票？" : "批量核对所选发票？"
+          }
+          description="这将接受这些发票当前的识别字段并直接记入台账。重复票、缺失号码或金额不平的记录会被跳过，其余记录正常保存。"
+          details={`共 ${batchConfirm?.ids.length ?? 0} 张${
+            batchAttribution.trim()
+              ? `\n本批归属：${batchAttribution.trim()}`
+              : "\n本批不填写归属"
+          }`}
+          confirmLabel="核对并保存"
+          onCancel={() => setBatchConfirm(undefined)}
+          onConfirm={() => void verifyBatch()}
         />
         {dragging && (
           <div className="drag-overlay">
@@ -1441,6 +1719,7 @@ type EditFields = Omit<Fields, "amountCents" | "taxCents" | "totalCents"> & {
 function toEdit(v: Fields): EditFields {
   return {
     ...v,
+    attribution: v.attribution ?? "",
     amount: v.amountCents == null ? "" : (v.amountCents / 100).toFixed(2),
     tax: v.taxCents == null ? "" : (v.taxCents / 100).toFixed(2),
     total: v.totalCents == null ? "" : (v.totalCents / 100).toFixed(2),
@@ -1608,7 +1887,12 @@ function Editor({
   const input = (
     label: string,
     key: keyof EditFields,
-    options: { wide?: boolean; required?: boolean; type?: string } = {},
+    options: {
+      wide?: boolean;
+      required?: boolean;
+      type?: string;
+      placeholder?: string;
+    } = {},
   ) => (
     <label className={`field ${options.wide ? "wide" : ""}`}>
       <span>
@@ -1617,9 +1901,12 @@ function Editor({
       </span>
       <input
         type={options.type ?? "text"}
-        value={fields[key]}
+        value={fields[key] ?? ""}
         onChange={(e) => set(key, e.target.value)}
-        placeholder={options.required ? "请核对并填写" : "选填"}
+        placeholder={
+          options.placeholder ??
+          (options.required ? "请核对并填写" : "选填")
+        }
         autoComplete="off"
         spellCheck={false}
       />
@@ -1812,6 +2099,10 @@ function Editor({
                   />
                 </div>
                 {input("票面项目", "itemName", { wide: true })}
+                {input("归属（用于统计）", "attribution", {
+                  wide: true,
+                  placeholder: "例如：项目名称或客户名称；相同文字会归入同一组",
+                })}
               </div>
               <div className="form-section-title">
                 02 <strong>购销双方</strong>
