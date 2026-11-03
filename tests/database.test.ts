@@ -110,20 +110,19 @@ test("batch verification applies attribution and reports per-invoice failures", 
     const saved = db.list({ attribution: "新批次" }).items[0];
     assert.equal(saved.attribution, "新批次");
     assert.equal(saved.id === existing, false);
-    assert.deepEqual(
-      db
-        .stats()
-        .attributions.map(({ attribution, count, totalCents }) => ({
-          attribution,
-          count,
-          totalCents,
-        }))
-        .sort((a, b) => a.attribution.localeCompare(b.attribution)),
-      [
-        { attribution: "测试归属", count: 1, totalCents: 1300949 },
-        { attribution: "新批次", count: 1, totalCents: 1300949 },
-      ],
-    );
+    const groups = db.stats().attributions;
+    assert.equal(groups.length, 2);
+    for (const attribution of ["测试归属", "新批次"]) {
+      const group = groups.find((item) => item.attribution === attribution);
+      assert.deepEqual(
+        group && {
+          attribution: group.attribution,
+          count: group.count,
+          totalCents: group.totalCents,
+        },
+        { attribution, count: 1, totalCents: 1300949 },
+      );
+    }
     assert.equal(db.list({ attribution: null }).total, 0);
   } finally {
     db.close();
