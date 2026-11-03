@@ -51,6 +51,8 @@ const api: LedgerAPI = {
   getInvoice: (id) => ipcRenderer.invoke("get-invoice", id),
   updateInvoice: (id, fields) =>
     ipcRenderer.invoke("update-invoice", id, fields),
+  permanentlyDeleteInvoice: (id) =>
+    ipcRenderer.invoke("permanently-delete-invoice", id),
   archiveInvoice: (id, archived) =>
     ipcRenderer.invoke("archive-invoice", id, archived),
   stats: (month, dateBasis) => ipcRenderer.invoke("stats", month, dateBasis),

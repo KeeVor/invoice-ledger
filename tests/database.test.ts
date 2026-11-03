@@ -35,6 +35,7 @@ function fixture() {
   });
   return {
     db,
+    documentId,
     add: (f: Fields = fields) =>
       db.addDraft(documentId, 1, "previews/test.png", f),
   };
@@ -162,6 +163,83 @@ test("version 1 databases gain an empty attribution column without data loss", a
     } catch {}
     for (const suffix of ["", "-wal", "-shm"])
       await fs.rm(`${path}${suffix}`, { force: true });
+  }
+});
+test("only archived invoices can be permanently deleted with related metadata", () => {
+  const { db, add, documentId } = fixture();
+  try {
+    const { id } = db.saveDraft(add(), fields);
+    assert.throws(
+      () => db.deleteArchivedInvoice(id!),
+      /只有已归档的发票可以永久删除/,
+    );
+    db.archiveInvoice(id!, true);
+    const cleanup = db.deleteArchivedInvoice(id!);
+    assert.deepEqual(cleanup, {
+      previewPath: "previews/test.png",
+      storedPath: "originals/test.pdf",
+      removePreview: true,
+      removeOriginal: true,
+    });
+    assert.equal(db.getInvoice(id!), null);
+    assert.equal(
+      (
+        db.db
+          .prepare("SELECT COUNT(*) AS count FROM events WHERE target=?")
+          .get(id) as { count: number }
+      ).count,
+      0,
+    );
+    assert.equal(
+      (
+        db.db
+          .prepare("SELECT COUNT(*) AS count FROM documents WHERE id=?")
+          .get(documentId) as { count: number }
+      ).count,
+      0,
+    );
+    assert.equal(db.duplicate(fields.invoiceNumber, ""), null);
+  } finally {
+    db.close();
+  }
+});
+test("deleting one PDF page keeps its document until the last page is deleted", () => {
+  const { db, documentId } = fixture();
+  try {
+    const first = db.saveDraft(
+      db.addDraft(documentId, 1, "previews/test/page-1.png", fields),
+      fields,
+    ).id!;
+    const secondFields = {
+      ...fields,
+      invoiceNumber: "20000000000000000002",
+    };
+    const second = db.saveDraft(
+      db.addDraft(documentId, 2, "previews/test/page-2.png", secondFields),
+      secondFields,
+    ).id!;
+    db.archiveInvoice(first, true);
+    db.archiveInvoice(second, true);
+    assert.equal(db.deleteArchivedInvoice(first).removeOriginal, false);
+    assert.equal(
+      (
+        db.db
+          .prepare("SELECT COUNT(*) AS count FROM documents WHERE id=?")
+          .get(documentId) as { count: number }
+      ).count,
+      1,
+    );
+    assert.equal(db.deleteArchivedInvoice(second).removeOriginal, true);
+    assert.equal(
+      (
+        db.db
+          .prepare("SELECT COUNT(*) AS count FROM documents WHERE id=?")
+          .get(documentId) as { count: number }
+      ).count,
+      0,
+    );
+  } finally {
+    db.close();
   }
 });
 test("archived invoice remains duplicate and can be restored", () => {

@@ -274,6 +274,33 @@ function setupHandlers() {
     if (result.id) dirty = true;
     return result;
   });
+  handle("permanently-delete-invoice", async (value) => {
+    writable();
+    const cleanup = db.deleteArchivedInvoice(id.parse(value));
+    dirty = true;
+    const warnings: string[] = [];
+    if (cleanup.removePreview) {
+      try {
+        await fs.rm(within(root, cleanup.previewPath), { force: true });
+      } catch {
+        warnings.push("部分预览未能从磁盘清理");
+      }
+    }
+    if (cleanup.removeOriginal) {
+      try {
+        await fs.rm(within(root, cleanup.storedPath), { force: true });
+        await fs.rmdir(dirname(within(root, cleanup.previewPath))).catch(
+          (error: NodeJS.ErrnoException) => {
+            if (!["ENOENT", "ENOTEMPTY"].includes(error.code ?? ""))
+              throw error;
+          },
+        );
+      } catch {
+        warnings.push("部分原件未能从磁盘清理");
+      }
+    }
+    return { warnings };
+  });
   handle("archive-invoice", (value, archived) => {
     writable();
     db.archiveInvoice(id.parse(value), z.boolean().parse(archived));

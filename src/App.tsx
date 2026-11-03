@@ -34,6 +34,7 @@ import {
   RotateCcw,
   LayoutGrid,
   ReceiptText,
+  Trash2,
 } from "lucide-react";
 import {
   GlassSelect,
@@ -1763,7 +1764,7 @@ function Editor({
   );
   const [raw, setRaw] = useState(false);
   const [confirmAction, setConfirmAction] = useState<
-    "discard" | "archive" | "close"
+    "discard" | "archive" | "delete" | "close"
   >();
   const [changed, setChanged] = useState(false);
   const [error, setError] = useState("");
@@ -1862,7 +1863,15 @@ function Editor({
     }
     setBusy(true);
     try {
-      if (confirmAction === "discard") {
+      if (confirmAction === "delete") {
+        const result = await window.ledger.permanentlyDeleteInvoice(value.id);
+        if (result.warnings.length)
+          notify(
+            "记录已永久删除，但部分原件或预览未能从磁盘清理，请检查数据目录。",
+            true,
+          );
+        else notify("记录已永久删除");
+      } else if (confirmAction === "discard") {
         await window.ledger.discardDraft(value.id);
         notify("已移出待核对列表，已保存的发票不受影响");
       } else {
@@ -2176,20 +2185,36 @@ function Editor({
             </div>
           </div>
           <footer className="editor-footer">
-            <button
-              className="text-button danger-text"
-              disabled={busy}
-              onClick={() =>
-                setConfirmAction(kind === "draft" ? "discard" : "archive")
-              }
-            >
-              {kind === "draft" ? <X size={15} /> : <Archive size={15} />}
-              {kind === "draft"
-                ? "移出待核对"
-                : selection.kind === "invoice" && selection.value.archived
-                  ? "恢复有效记录"
-                  : "归档此记录"}
-            </button>
+            <div>
+              <button
+                className={`text-button ${
+                  selection.kind === "invoice" && selection.value.archived
+                    ? ""
+                    : "danger-text"
+                }`}
+                disabled={busy}
+                onClick={() =>
+                  setConfirmAction(kind === "draft" ? "discard" : "archive")
+                }
+              >
+                {kind === "draft" ? <X size={15} /> : <Archive size={15} />}
+                {kind === "draft"
+                  ? "移出待核对"
+                  : selection.kind === "invoice" && selection.value.archived
+                    ? "恢复有效记录"
+                    : "归档此记录"}
+              </button>
+              {selection.kind === "invoice" && !!selection.value.archived && (
+                <button
+                  className="text-button danger-text"
+                  disabled={busy}
+                  onClick={() => setConfirmAction("delete")}
+                >
+                  <Trash2 size={15} />
+                  永久删除
+                </button>
+              )}
+            </div>
             <div>
               <button
                 className="button secondary"
@@ -2222,6 +2247,7 @@ function Editor({
             open={!!confirmAction}
             busy={busy}
             danger={
+              confirmAction === "delete" ||
               !(
                 confirmAction === "archive" &&
                 selection.kind === "invoice" &&
@@ -2229,7 +2255,9 @@ function Editor({
               )
             }
             title={
-              confirmAction === "close"
+              confirmAction === "delete"
+                ? "永久删除这条发票？"
+                : confirmAction === "close"
                 ? "放弃未保存的修改？"
                 : confirmAction === "discard"
                   ? "移出待核对列表？"
@@ -2238,7 +2266,9 @@ function Editor({
                     : "将这条发票记录归档？"
             }
             description={
-              confirmAction === "close"
+              confirmAction === "delete"
+                ? "该记录将从当前账本永久删除，无法恢复。未被其他发票使用的原件和预览也会移除；旧的手动备份可能仍包含它。删除后同一张发票可以重新导入。"
+                : confirmAction === "close"
                 ? "你在当前核对窗口所作的修改尚未保存。"
                 : confirmAction === "discard"
                   ? "不会删除已有正式记录。需要时可重新导入原件。"
@@ -2247,7 +2277,9 @@ function Editor({
                     : "归档后，这张发票不再计入统计；再次导入仍会提示重复。你可以随时恢复这条记录。"
             }
             confirmLabel={
-              confirmAction === "close"
+              confirmAction === "delete"
+                ? "永久删除"
+                : confirmAction === "close"
                 ? "放弃修改"
                 : confirmAction === "discard"
                   ? "确认移出"
@@ -2255,6 +2287,17 @@ function Editor({
                     ? "恢复记录"
                     : "确认归档"
             }
+            details={
+              confirmAction === "delete"
+                ? `发票号码：${value.invoiceNumber}\n开票日期：${value.invoiceDate}\n价税合计：¥ ${money(value.totalCents)}`
+                : undefined
+            }
+            verificationText={
+              confirmAction === "delete"
+                ? value.invoiceNumber.slice(-6)
+                : undefined
+            }
+            verificationLabel="请输入发票号码后 6 位以确认"
             onCancel={() => setConfirmAction(undefined)}
             onConfirm={executeAction}
           />

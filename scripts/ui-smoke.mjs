@@ -19,14 +19,28 @@ for (const name of ["invoices.db", "originals", "previews"]) {
   await fs.cp(join(previous.data, name), join(data, name), { recursive: true });
 }
 const batchDb = new (require("better-sqlite3"))(join(data, "invoices.db"));
+let batchInvoices = [];
 try {
   const now = new Date().toISOString();
-  await fs.writeFile(join(data, "originals", "batch-a.pdf"), "batch-a");
-  await fs.writeFile(join(data, "previews", "batch-a.png"), "");
-  for (const [number, itemName, amount] of [
+  batchInvoices = [
     ["20000000000000000011", "批量办公用品甲", 10000],
     ["20000000000000000012", "批量办公用品乙", 20000],
-  ]) {
+  ].map(([number, itemName, amount], index) => ({
+    number,
+    itemName,
+    amount,
+    storedPath: `originals/batch-${index}.pdf`,
+    previewPath: `previews/batch-${index}.png`,
+  }));
+  for (const [index, invoice] of batchInvoices.entries()) {
+    await fs.writeFile(
+      join(data, "originals", `batch-${index}.pdf`),
+      `batch-${index}`,
+    );
+    await fs.writeFile(
+      join(data, "previews", `batch-${index}.png`),
+      "",
+    );
     const documentId = randomUUID();
     const draftId = randomUUID();
     batchDb
@@ -34,7 +48,7 @@ try {
       .run(
         documentId,
         "批量核对.pdf",
-        "originals/batch-a.pdf",
+        invoice.storedPath,
         documentId,
         now,
       );
@@ -44,9 +58,9 @@ try {
         draftId,
         documentId,
         1,
-        "previews/batch-a.png",
+        invoice.previewPath,
         JSON.stringify({
-          invoiceNumber: number,
+          invoiceNumber: invoice.number,
           invoiceCode: "",
           invoiceDate: "2026-09-08",
           invoiceType: "普通发票",
@@ -54,12 +68,12 @@ try {
           sellerName: "测试销售方",
           buyerTaxId: "",
           sellerTaxId: "",
-          itemName,
+          itemName: invoice.itemName,
           category: "办公用品",
           attribution: "",
-          amountCents: amount,
+          amountCents: invoice.amount,
           taxCents: 1300,
-          totalCents: amount + 1300,
+          totalCents: invoice.amount + 1300,
           notes: "",
         }),
         now,
@@ -344,6 +358,10 @@ try {
   const opener = button("查看发票 20000000000000000001");
   await click(opener);
   await page.getByRole("dialog", { name: /发票详情/ }).waitFor();
+  assert.equal(
+    (await page.locator(".editor-footer > div").first().innerText()).trim(),
+    "归档此记录",
+  );
   assert.ok(
     await page.locator(".record-timestamp time").getAttribute("datetime"),
   );
@@ -597,6 +615,62 @@ try {
   await attributionReport.waitFor();
   assert.match(await attributionReport.innerText(), /重复批次[\s\S]*2 张/);
   await screenshot("batch-attribution-report");
+  const deletable = await page.evaluate(async () => {
+    const invoice = (await window.ledger.list({})).items.find(
+      (item) => item.attribution === "重复批次",
+    );
+    await window.ledger.archiveInvoice(invoice.id, true);
+    return { id: invoice.id, invoiceNumber: invoice.invoiceNumber };
+  });
+  const deletableFixture = batchInvoices.find(
+    (invoice) => invoice.number === deletable.invoiceNumber,
+  );
+  assert.ok(deletableFixture);
+  await page.reload();
+  await click(button("切换归档记录"));
+  await page
+    .getByRole("heading", { name: "归档记录 1", exact: true })
+    .waitFor();
+  await click(button(`查看发票 ${deletable.invoiceNumber}`));
+  await click(button("永久删除"));
+  const deleteDialog = page.getByRole("alertdialog", {
+    name: "永久删除这条发票？",
+    exact: true,
+  });
+  await deleteDialog.waitFor();
+  const deleteButton = deleteDialog.getByRole("button", {
+    name: "永久删除",
+    exact: true,
+  });
+  const deleteInput = deleteDialog.getByRole("textbox", {
+    name: "请输入发票号码后 6 位以确认",
+    exact: true,
+  });
+  assert.equal(await deleteButton.isDisabled(), true);
+  await deleteInput.fill("000000");
+  assert.equal(await deleteButton.isDisabled(), true);
+  await deleteInput.fill(deletable.invoiceNumber.slice(-6));
+  assert.equal(await deleteButton.isDisabled(), false);
+  await screenshot("permanent-delete-confirm");
+  await click(deleteButton);
+  await deleteDialog.waitFor({ state: "detached" });
+  await page.getByRole("dialog").waitFor({ state: "detached" });
+  assert.equal(
+    await page.evaluate(
+      (id) => window.ledger.getInvoice(id),
+      deletable.id,
+    ),
+    null,
+  );
+  assert.equal((await page.evaluate(() => window.ledger.stats())).count, 3);
+  await assert.rejects(
+    fs.stat(join(data, deletableFixture.storedPath)),
+    { code: "ENOENT" },
+  );
+  await assert.rejects(
+    fs.stat(join(data, deletableFixture.previewPath)),
+    { code: "ENOENT" },
+  );
   assert.doesNotMatch(
     await page.locator("body").innerText(),
     /SQLite|OCR|Electron|数据库|识别引擎|npm\s|唯一索引|入库/,
@@ -624,11 +698,13 @@ try {
       "no renderer errors",
       "net amount and tax columns, exempt tax and filtered all-page totals",
       "entry timestamp in invoice details",
+      "invoice footer does not render false numeric state",
       "invoice-time / local entry-time report switching, months and grouped totals",
       "compact monetary columns without overlapping text",
       "batch verification keeps duplicate failures pending",
       "batch success groups shared attribution in reports",
       "dialogs do not scroll the background",
+      "archived invoice permanent deletion with confirmation and file cleanup",
     ],
   };
   await fs.writeFile(

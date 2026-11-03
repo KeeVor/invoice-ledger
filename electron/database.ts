@@ -145,6 +145,12 @@ const columns = [
   "totalCents",
   "notes",
 ];
+export type InvoiceDeletionCleanup = {
+  previewPath: string;
+  storedPath: string;
+  removePreview: boolean;
+  removeOriginal: boolean;
+};
 
 export class LedgerDB {
   db: Database.Database;
@@ -380,6 +386,58 @@ export class LedgerDB {
         JSON.stringify({ before: existing, after: fields }),
       );
       return { id };
+    })();
+  }
+  deleteArchivedInvoice(id: string): InvoiceDeletionCleanup {
+    return this.db.transaction(() => {
+      const invoice = this.db
+        .prepare(
+          "SELECT i.documentId,i.previewPath,i.archived,d.storedPath FROM invoices i JOIN documents d ON d.id=i.documentId WHERE i.id=?",
+        )
+        .get(id) as
+        | {
+            documentId: string;
+            previewPath: string;
+            storedPath: string;
+            archived: number;
+          }
+        | undefined;
+      if (!invoice) throw new Error("记录不存在");
+      if (!invoice.archived) throw new Error("只有已归档的发票可以永久删除");
+      this.db.prepare("DELETE FROM events WHERE target=?").run(id);
+      this.db.prepare("DELETE FROM invoices WHERE id=?").run(id);
+      const documentRefs = (
+        this.db
+          .prepare(
+            "SELECT (SELECT COUNT(*) FROM drafts WHERE documentId=@documentId)+(SELECT COUNT(*) FROM invoices WHERE documentId=@documentId) AS count",
+          )
+          .get({ documentId: invoice.documentId }) as { count: number }
+      ).count;
+      const previewRefs = (
+        this.db
+          .prepare(
+            "SELECT (SELECT COUNT(*) FROM drafts WHERE previewPath=@previewPath)+(SELECT COUNT(*) FROM invoices WHERE previewPath=@previewPath) AS count",
+          )
+          .get({ previewPath: invoice.previewPath }) as { count: number }
+      ).count;
+      let removeOriginal = false;
+      if (!documentRefs) {
+        const originalRefs = (
+          this.db
+            .prepare(
+              "SELECT COUNT(*) AS count FROM documents WHERE storedPath=? AND id<>?",
+            )
+            .get(invoice.storedPath, invoice.documentId) as { count: number }
+        ).count;
+        this.db.prepare("DELETE FROM documents WHERE id=?").run(invoice.documentId);
+        removeOriginal = !originalRefs;
+      }
+      return {
+        previewPath: invoice.previewPath,
+        storedPath: invoice.storedPath,
+        removePreview: !previewRefs,
+        removeOriginal,
+      };
     })();
   }
   archiveInvoice(id: string, archived: boolean) {

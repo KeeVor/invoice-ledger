@@ -50,6 +50,9 @@ export type BatchDraftResult = {
   saved: number;
   failed: BatchDraftFailure[];
 };
+export type InvoiceDeleteResult = {
+  warnings: string[];
+};
 export type Filter = {
   search?: string;
   month?: string;
@@ -147,6 +150,7 @@ export interface LedgerAPI {
     id: string,
     fields: Fields,
   ): Promise<{ id?: string; duplicate?: Duplicate }>;
+  permanentlyDeleteInvoice(id: string): Promise<InvoiceDeleteResult>;
   archiveInvoice(id: string, archived: boolean): Promise<void>;
   stats(month?: string, dateBasis?: StatsDateBasis): Promise<Stats>;
   preview(kind: "draft" | "invoice", id: string): Promise<string | null>;

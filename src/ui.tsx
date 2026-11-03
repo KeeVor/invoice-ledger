@@ -493,6 +493,8 @@ export function ConfirmDialog({
   cancelLabel = "取消",
   danger,
   busy,
+  verificationText,
+  verificationLabel = "请输入确认文字",
   onCancel,
   onConfirm,
 }: {
@@ -504,10 +506,18 @@ export function ConfirmDialog({
   cancelLabel?: string;
   danger?: boolean;
   busy?: boolean;
+  verificationText?: string;
+  verificationLabel?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
   const returnFocus = useRef<HTMLElement | null>(null);
+  const [verification, setVerification] = useState("");
+  useEffect(() => {
+    if (open) setVerification("");
+  }, [open, verificationText]);
+  const verified =
+    !verificationText || verification.trim() === verificationText;
   return (
     <AlertDialog.Root
       open={open}
@@ -540,6 +550,19 @@ export function ConfirmDialog({
           <AlertDialog.Title>{title}</AlertDialog.Title>
           <AlertDialog.Description>{description}</AlertDialog.Description>
           {details && <pre className="confirm-details">{details}</pre>}
+          {verificationText && (
+            <label className="confirm-verification">
+              <span>{verificationLabel}</span>
+              <input
+                value={verification}
+                onChange={(event) => setVerification(event.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                inputMode="numeric"
+                aria-label={verificationLabel}
+              />
+            </label>
+          )}
           <div className="confirm-actions">
             <AlertDialog.Cancel asChild>
               <button className="button secondary" disabled={busy}>
@@ -548,7 +571,7 @@ export function ConfirmDialog({
             </AlertDialog.Cancel>
             <button
               className={`button ${danger ? "danger" : "primary"}`}
-              disabled={busy}
+              disabled={busy || !verified}
               onClick={onConfirm}
             >
               {busy && <LoaderCircle size={16} className="spin" />}
