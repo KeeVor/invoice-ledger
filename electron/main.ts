@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net, shell } from "electron";
 import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, basename, dirname, extname, relative, resolve } from "node:path";
@@ -12,7 +12,7 @@ import { createAutoBackup, createBackup, unpackBackup, within } from "./backup";
 import type { Filter, ImportProgress, ConfirmationRequest } from "../src/types";
 import { userError } from "../src/messages";
 import { autoUpdater } from "electron-updater";
-import { UpdateService, RELEASES_URL } from "./updates";
+import { UpdateService, RELEASES_URL, RELEASE_NOTES_URL } from "./updates";
 
 const testDir = process.env.INVOICE_LEDGER_DATA_DIR;
 if (testDir && !app.isPackaged) app.setPath("userData", resolve(testDir));
@@ -32,6 +32,23 @@ const monthSchema = z
   .string()
   .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
   .or(z.literal(""));
+const releaseNotesSchema = z
+  .object({
+    format: z.literal(1),
+    releases: z
+      .array(
+        z
+          .object({
+            version: z.string().regex(/^\d+\.\d+\.\d+$/),
+            added: z.array(z.string().trim().min(1).max(1000)).max(100),
+            fixed: z.array(z.string().trim().min(1).max(1000)).max(100),
+            changed: z.array(z.string().trim().min(1).max(1000)).max(100),
+          })
+          .strict(),
+      )
+      .max(200),
+  })
+  .strict();
 const dateTag = () => new Date().toISOString().replace(/[:.]/g, "-");
 let pendingConfirmation:
   | { id: string; resolve: (confirmed: boolean) => void }
@@ -196,6 +213,23 @@ function setupHandlers() {
   handle("download-update", () => updates.download());
   handle("install-update", () => updates.install());
   handle("open-releases", () => shell.openExternal(RELEASES_URL));
+  handle("release-notes", async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
+    try {
+      const response = await net.fetch(RELEASE_NOTES_URL, {
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error("release notes unavailable");
+      const text = await response.text();
+      if (text.length > 512_000) throw new Error("release notes too large");
+      return releaseNotesSchema.parse(JSON.parse(text));
+    } catch {
+      throw new Error("暂时无法加载版本更新说明，请稍后重试");
+    } finally {
+      clearTimeout(timer);
+    }
+  });
   handle("ui-confirm-result", (requestId, confirmed) => {
     const accepted = z.boolean().parse(confirmed);
     if (pendingConfirmation?.id !== id.parse(requestId))

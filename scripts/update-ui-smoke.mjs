@@ -36,11 +36,15 @@ try {
     const { EventEmitter } = require("node:events");
     const { UpdateService } = require(servicePath);
     const adapter = new EventEmitter();
-    const test = globalThis.__updatesTest = { installs: 0, downloads: 0, failCheck: false, failPrepare: false, ready: false };
+    const test = globalThis.__updatesTest = { installs: 0, downloads: 0, failCheck: false, failPrepare: false, releaseNotesFail: false, ready: false };
     const send = (channel, payload) => BrowserWindow.getAllWindows()[0].webContents.send(channel, payload);
     adapter.checkForUpdates = async () => {
       if (test.failCheck) throw new Error("simulated network outage");
-      adapter.emit("update-available", { version: "0.3.1", releaseNotes: '<img src=x onerror="alert(1)">\nSynthetic release notes' });
+      adapter.emit("update-available", {
+        version: "0.4.3",
+        releaseNotes:
+          '<h2>票迹 v0.4.3</h2><ul><li>批量核对</li><li>永久删除</li></ul><img src=x onerror="alert(1)"><script>alert(1)</script>\nSynthetic release notes',
+      });
     };
     adapter.downloadUpdate = async () => {
       test.downloads++;
@@ -61,6 +65,32 @@ try {
       "check-for-updates": () => service.check(),
       "download-update": () => service.download(),
       "install-update": () => service.install(),
+      "release-notes": () => {
+        if (test.releaseNotesFail) throw new Error("simulated notes outage");
+        return {
+          format: 1,
+          releases: [
+            {
+              version: "0.4.3",
+              added: ["按版本展示更新说明", "增加更新内容对话框"],
+              fixed: [],
+              changed: [],
+            },
+            {
+              version: "0.4.2",
+              added: [],
+              fixed: ["更新说明 HTML 标签显示问题"],
+              changed: ["更新说明改为纯文本渲染"],
+            },
+            {
+              version: "0.4.1",
+              added: ["不应显示的旧版本"],
+              fixed: [],
+              changed: [],
+            },
+          ],
+        };
+      },
       "ui-confirm-result": (_, id, accepted) => { confirm(accepted); },
     };
     for (const [name, handler] of Object.entries(handlers)) {
@@ -74,9 +104,41 @@ try {
   await button("检查更新").click();
   await button("下载更新").waitFor();
   assert.equal(await app.evaluate(() => globalThis.__updatesTest.downloads), 0);
-  await page.getByText("本次更新内容", { exact: true }).click();
-  assert.match(await page.locator(".update-notes pre").innerText(), /<img/);
-  assert.equal(await page.locator(".update-notes img").count(), 0);
+  await button("查看更新内容").click();
+  const notesDialog = page.getByRole("dialog", {
+    name: "更新内容",
+    exact: true,
+  });
+  await notesDialog.waitFor();
+  assert.deepEqual(
+    await notesDialog.locator(".release-version h3").allTextContents(),
+    ["v0.4.3", "v0.4.2"],
+  );
+  assert.match(await notesDialog.innerText(), /按版本展示更新说明/);
+  assert.match(await notesDialog.innerText(), /更新说明 HTML 标签显示问题/);
+  assert.doesNotMatch(await notesDialog.innerText(), /不应显示的旧版本/);
+  assert.doesNotMatch(await notesDialog.innerText(), /<(h2|li|img|script)/i);
+  assert.equal(await notesDialog.locator("img").count(), 0);
+  await page.screenshot({ path: join(output, "release-notes-dialog.png") });
+  await button("关闭更新内容").click();
+  await notesDialog.waitFor({ state: "detached" });
+  await app.evaluate(() => {
+    globalThis.__updatesTest.releaseNotesFail = true;
+  });
+  await button("查看更新内容").click();
+  await notesDialog.waitFor();
+  assert.match(
+    await notesDialog.innerText(),
+    /暂时无法加载历史版本说明/,
+  );
+  assert.match(await notesDialog.innerText(), /票迹 v0\.4\.3/);
+  assert.match(await notesDialog.innerText(), /• 批量核对/);
+  assert.match(await notesDialog.innerText(), /Synthetic release notes/);
+  await page.screenshot({
+    path: join(output, "release-notes-fallback.png"),
+  });
+  await button("关闭更新内容").click();
+  await notesDialog.waitFor({ state: "detached" });
   await page.screenshot({ path: join(output, "available.png"), fullPage: true });
   await button("下载更新").click();
   await button("安装更新并退出").waitFor();
@@ -98,7 +160,7 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.screenshot({ path: join(output, "compact.png"), fullPage: true });
   assert.deepEqual(errors, []);
-  console.log("Update UI: disabled development mode, check, explicit download, inert release notes, cancel, blocked preparation, install and compact layout passed (simulated updater; no real installation).");
+  console.log("Update UI: disabled development mode, versioned release notes dialog and fallback, explicit download, cancel, blocked preparation, install and compact layout passed (simulated updater; no real installation).");
 } finally {
   await app.close();
 }

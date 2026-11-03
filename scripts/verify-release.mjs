@@ -24,5 +24,24 @@ const digest = sha512.digest("base64");
 assert.equal(entry.sha512, digest);
 assert.equal(info.sha512, digest);
 assert.ok((await fs.stat(join(root, `${name}.blockmap`))).size > 0);
+const notes = JSON.parse(
+  await fs.readFile(join(root, "release-notes.json"), "utf8"),
+);
+assert.equal(notes.format, 1);
+assert.ok(Array.isArray(notes.releases) && notes.releases.length);
+assert.equal(notes.releases[0].version, version);
+for (const release of notes.releases) {
+  assert.match(release.version, /^\d+\.\d+\.\d+$/);
+  for (const items of [release.added, release.fixed, release.changed]) {
+    assert.ok(Array.isArray(items));
+    for (const item of items) {
+      assert.equal(typeof item, "string");
+      assert.ok(item.trim());
+      assert.doesNotMatch(item, /<[a-z][^>]*>/i);
+    }
+  }
+}
 await fs.writeFile(join(root, "SHA256SUMS.txt"), `${sha256.digest("hex")}  ${name}\n`);
-console.log(`Release ${version}: installer size, SHA512, blockmap and metadata verified`);
+console.log(
+  `Release ${version}: installer, update metadata and ${notes.releases.length} version note file(s) verified`,
+);

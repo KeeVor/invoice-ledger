@@ -2,9 +2,9 @@
 
 ## 发布流程
 
-1. 修改代码，补充测试和 `CHANGELOG.md`。
+1. 修改代码，补充测试和 `CHANGELOG.md`，并新建 `docs/release-notes/v版本号.md`，只记录这个版本相对上一正式版本的差异。
 2. 运行 `npm version 版本号 --no-git-tag-version`，同步提交 `package.json` 与 `package-lock.json`。
-3. 运行 `npm run build`、`npm test`、`npm run test:python` 和 `npm run test:updates:ui`。
+3. 运行 `npm run release-notes:check`、`npm run build`、`npm test`、`npm run test:python` 和 `npm run test:updates:ui`。
 4. 提交代码后创建与版本一致的标签，例如 `git tag v0.3.1`，再推送提交和标签。
 5. `release.yml` 在 Windows 上构建，先上传到草稿 Release，全部资产到位后才公开发布。
 
@@ -13,11 +13,14 @@
 - `Piaoji-Setup-版本号.exe`
 - `Piaoji-Setup-版本号.exe.blockmap`
 - `latest.yml`
+- `release-notes.json`
 - `SHA256SUMS.txt`
 
 不要手工修改 `latest.yml` 中的版本、路径、大小或 SHA512。元数据与安装包必须来自同一次构建。不要只上传安装包，否则旧版客户端无法发现更新。
 
-本地构建输出固定为 `release/current`。`npm run dist` 在构建前清理旧版本目录、`python-build` 和 `python-dist`，发布包生成后再清理 `win-unpacked` 与 Python 中间产物，只保留安装包、blockmap、`latest.yml`、`SHA256SUMS.txt` 和少量构建元数据。需要 `win-unpacked` 做打包检查时，运行 `npm run dist:dir`。
+`release-notes.json` 由 `scripts/release-notes.mjs` 根据逐版本 Markdown 文件生成，包含按版本区分的新增、修复和行为变化。客户端从最新 Release 的固定资产地址读取这份文件，只展示当前版本之后、最新版本之前的正式版本；加载失败时回退显示 `latest.yml` 中的最新版说明。
+
+本地构建输出固定为 `release/current`。`npm run dist` 在构建前清理旧版本目录、`python-build` 和 `python-dist`，发布包生成后再清理 `win-unpacked` 与 Python 中间产物，只保留安装包、blockmap、`latest.yml`、`release-notes.json`、`SHA256SUMS.txt` 和少量构建元数据。需要 `win-unpacked` 做打包检查时，运行 `npm run dist:dir`。
 
 工作流使用仓库自带的 `GITHUB_TOKEN`，权限仅为发布需要的 `contents: write`；应用内没有 GitHub 令牌，也不需要用户登录 GitHub。可通过 Actions 页面重跑失败的标签构建。公开后的同版本资产不得覆盖；修复应发布更高版本。
 

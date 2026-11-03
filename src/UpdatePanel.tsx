@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
-import { ArrowDownToLine, ArrowUpRight, LoaderCircle, RefreshCw } from "lucide-react";
+import {
+  ArrowDownToLine,
+  ArrowUpRight,
+  ChevronDown,
+  LoaderCircle,
+  RefreshCw,
+} from "lucide-react";
 import type { UpdateState, UpdateStatus } from "./types";
 import { userError } from "./messages";
+import { ReleaseNotesDialog } from "./ReleaseNotesDialog";
 
 const labels: Record<UpdateStatus, string> = {
   disabled: "应用内更新未启用",
@@ -19,6 +26,7 @@ export function UpdatePanel({ version, blocked }: { version?: string; blocked: b
   const [state, setState] = useState<UpdateState>({ status: "idle" });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [notesOpen, setNotesOpen] = useState(false);
   useEffect(() => {
     if (!window.ledger) return;
     let received = false;
@@ -49,6 +57,7 @@ export function UpdatePanel({ version, blocked }: { version?: string; blocked: b
   }
   const working = pending || ["checking", "downloading", "installing"].includes(state.status);
   return (
+    <>
     <section className="settings-card update-card" aria-labelledby="update-heading">
       <div className="settings-icon"><RefreshCw size={25} /></div>
       <h2 id="update-heading">让票迹，保持新鲜</h2>
@@ -64,7 +73,15 @@ export function UpdatePanel({ version, blocked }: { version?: string; blocked: b
           <span>{(state.percent ?? 0).toFixed(1)}%</span>
         </div>
       )}
-      {state.releaseNotes && <details className="update-notes"><summary>本次更新内容</summary><pre>{state.releaseNotes}</pre></details>}
+      {state.version && (
+        <button
+          className="text-button update-notes-trigger"
+          onClick={() => setNotesOpen(true)}
+        >
+          <ChevronDown size={16} />
+          查看更新内容
+        </button>
+      )}
       {(state.message || error) && <p className={error || state.status === "error" ? "negative" : "subtle"} role={error || state.status === "error" ? "alert" : undefined}>{error || state.message}</p>}
       <div className="backup-actions">
         {["idle", "not-available", "error", "checking"].includes(state.status) && (
@@ -78,5 +95,15 @@ export function UpdatePanel({ version, blocked }: { version?: string; blocked: b
       </div>
       <p className="subtle">安装更新不会额外创建备份。当前安装包尚未签名，Windows 可能提示未知发布者，请核对发布来源。</p>
     </section>
+    {state.version && (
+      <ReleaseNotesDialog
+        open={notesOpen}
+        onOpenChange={setNotesOpen}
+        currentVersion={version ?? "0.0.0"}
+        latestVersion={state.version}
+        fallbackNotes={state.releaseNotes}
+      />
+    )}
+    </>
   );
 }

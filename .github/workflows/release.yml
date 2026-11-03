@@ -31,10 +31,14 @@ jobs:
           if ($env:GITHUB_REF -ne "refs/tags/v$version") { throw 'Run release from the matching version tag' }
           "RELEASE_TAG=v$version" >> $env:GITHUB_ENV
           "RELEASE_DIR=release/current" >> $env:GITHUB_ENV
+          $notes = "docs/release-notes/v$version.md"
+          if (-not (Test-Path $notes)) { throw 'Versioned release notes are missing' }
+          "RELEASE_NOTES=$notes" >> $env:GITHUB_ENV
       - run: npm ci
       - run: npm exec -- install-electron
       - run: npm run python:setup
       - run: npm run build
+      - run: npm run release-notes:check
       - run: npm test
       - run: npm run test:python
       - run: npm run test:updates:ui
@@ -48,11 +52,11 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             if (-not ($existing | ConvertFrom-Json).isDraft) { throw 'Refusing to overwrite a public release' }
           } else {
-            gh release create $env:RELEASE_TAG --verify-tag --draft --title "票迹 $env:RELEASE_TAG" --notes-file docs/release-notes.md
+            gh release create $env:RELEASE_TAG --verify-tag --draft --title "票迹 $env:RELEASE_TAG" --notes-file $env:RELEASE_NOTES
             if ($LASTEXITCODE -ne 0) { throw 'Cannot create draft release' }
           }
-          $assets = @(Get-ChildItem "$env:RELEASE_DIR/Piaoji-Setup-*.exe", "$env:RELEASE_DIR/Piaoji-Setup-*.exe.blockmap", "$env:RELEASE_DIR/latest.yml", "$env:RELEASE_DIR/SHA256SUMS.txt" | ForEach-Object FullName)
-          if ($assets.Count -ne 4) { throw 'Release assets incomplete' }
+          $assets = @(Get-ChildItem "$env:RELEASE_DIR/Piaoji-Setup-*.exe", "$env:RELEASE_DIR/Piaoji-Setup-*.exe.blockmap", "$env:RELEASE_DIR/latest.yml", "$env:RELEASE_DIR/release-notes.json", "$env:RELEASE_DIR/SHA256SUMS.txt" | ForEach-Object FullName)
+          if ($assets.Count -ne 5) { throw 'Release assets incomplete' }
           gh release upload $env:RELEASE_TAG @assets --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Release upload failed; draft remains unpublished' }
           gh release edit $env:RELEASE_TAG --draft=false --latest

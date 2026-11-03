@@ -1,6 +1,8 @@
 import type { UpdateState } from "../src/types";
 
 export const RELEASES_URL = "https://github.com/KeeVor/invoice-ledger/releases";
+export const RELEASE_NOTES_URL =
+  "https://github.com/KeeVor/invoice-ledger/releases/latest/download/release-notes.json";
 
 export interface UpdaterAdapter {
   autoDownload: boolean;

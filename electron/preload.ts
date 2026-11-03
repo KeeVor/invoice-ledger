@@ -12,6 +12,7 @@ const api: LedgerAPI = {
   downloadUpdate: () => ipcRenderer.invoke("download-update"),
   installUpdate: () => ipcRenderer.invoke("install-update"),
   openReleases: () => ipcRenderer.invoke("open-releases"),
+  releaseNotes: () => ipcRenderer.invoke("release-notes"),
   onUpdate: (callback) => {
     const handler = (_: unknown, state: UpdateState) => callback(state);
     ipcRenderer.on("update-state-changed", handler);

@@ -24,10 +24,11 @@
     "clean": "node scripts/clean-artifacts.mjs --test --build",
     "clean:test": "node scripts/clean-artifacts.mjs --test",
     "clean:build": "node scripts/clean-artifacts.mjs --build",
+    "release-notes:check": "node scripts/release-notes.mjs --check",
     "python:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-python.ps1",
     "python:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-python.ps1",
-    "dist": "node scripts/clean-artifacts.mjs --release-before && npm run build && npm run python:build && node scripts/licenses.mjs && electron-builder --win nsis --publish never && node scripts/clean-artifacts.mjs --release-after",
-    "dist:dir": "node scripts/clean-artifacts.mjs --release-before && npm run build && npm run python:build && node scripts/licenses.mjs && electron-builder --win --dir --publish never && node scripts/clean-artifacts.mjs --release-dir-after",
+    "dist": "node scripts/clean-artifacts.mjs --release-before && node scripts/release-notes.mjs --check && npm run build && npm run python:build && node scripts/licenses.mjs && electron-builder --win nsis --publish never && node scripts/release-notes.mjs --generate && node scripts/clean-artifacts.mjs --release-after",
+    "dist:dir": "node scripts/clean-artifacts.mjs --release-before && node scripts/release-notes.mjs --check && npm run build && npm run python:build && node scripts/licenses.mjs && electron-builder --win --dir --publish never && node scripts/clean-artifacts.mjs --release-dir-after",
     "postinstall": "node -e \"require('better-sqlite3')(':memory:').close()\"",
     "test:updates:ui": "node scripts/update-ui-smoke.mjs"
   },

@@ -116,12 +116,23 @@ export type UpdateState = {
   percent?: number;
   message?: string;
 };
+export type ReleaseNote = {
+  version: string;
+  added: string[];
+  fixed: string[];
+  changed: string[];
+};
+export type ReleaseNotesHistory = {
+  format: 1;
+  releases: ReleaseNote[];
+};
 export interface LedgerAPI {
   updateState(): Promise<UpdateState>;
   checkForUpdates(): Promise<UpdateState>;
   downloadUpdate(): Promise<UpdateState>;
   installUpdate(): Promise<void>;
   openReleases(): Promise<void>;
+  releaseNotes(): Promise<ReleaseNotesHistory>;
   onUpdate(callback: (state: UpdateState) => void): () => void;
   info(): Promise<AppInfo>;
   chooseFiles(): Promise<string[]>;

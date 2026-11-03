@@ -28,7 +28,7 @@
 | 金额统计 | 查看不含税金额、税额和价税合计，支持按时间、分类、销售方或归属汇总 |
 | Excel 导出 | 导出当前筛选范围的台账和分类汇总，号码保留为文本 |
 | 完整备份 | 同时备份账本、原件和预览，正常退出时按需自动备份 |
-| 应用内更新 | 安装版可检查 GitHub Releases，确认下载与安装 |
+| 应用内更新 | 安装版可检查 GitHub Releases，按版本查看更新差异，确认下载与安装 |
 
 ## 下载与安装
 
@@ -100,6 +100,7 @@ npm run dev
 | `npm test` | 数据库、备份、提示文案和更新逻辑单元测试 |
 | `npm run test:python` | Python 发票字段解析测试 |
 | `npm run test:updates:ui` | 更新界面与 IPC 的隔离桌面测试 |
+| `npm run release-notes:check` | 校验当前版本的逐版本更新说明 |
 | `npm run dist` | 构建包含本地识别引擎的 Windows 安装包 |
 | `npm run dist:dir` | 构建 `win-unpacked`，供 `test:package` 使用 |
 | `npm run clean` | 清理测试账本、旧构建、Python 中间产物和发布目录 |
