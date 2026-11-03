@@ -51,6 +51,39 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(classify("奇怪的商品"), "未分类")
         self.assertEqual(classify("*畜禽产品*鸡蛋"), "食品 / 农产品")
 
+    def test_wrapped_item_suffix_is_kept(self):
+        r = parse_invoice([
+            word("发票号码：20000000000000000001", 700, 100),
+            word("*果类加工品*冷冶葵珍特", 70, 400),
+            word("樱桃味大瓜子168g", 70, 414),
+            word("合计", 100, 700),
+            word("100.00", 700, 700),
+            word("价税合计（小写）¥100.00", 100, 740),
+        ])
+        self.assertEqual(r["itemName"], "*果类加工品*冷冶葵珍特樱桃味大瓜子168g")
+
+    def test_wrapped_item_single_character_suffix_is_kept(self):
+        r = parse_invoice([
+            word("发票号码：20000000000000000001", 700, 100),
+            word("*方便食品*安心鲜卤鸭鸭", 70, 400),
+            word("蛋", 70, 414),
+        ])
+        self.assertEqual(r["itemName"], "*方便食品*安心鲜卤鸭鸭蛋")
+
+    def test_multiple_item_continuations_do_not_cross(self):
+        r = parse_invoice([
+            word("发票号码：20000000000000000001", 700, 100),
+            word("*方便食品*苹果", 70, 400),
+            word("红富士", 70, 414),
+            word("*方便食品*香蕉", 70, 430),
+            word("进口", 70, 444),
+        ])
+        self.assertEqual(
+            r["itemName"],
+            "*方便食品*苹果红富士；*方便食品*香蕉进口",
+        )
+        self.assertEqual(r["category"], "多类目 / 待拆分")
+
 
 if __name__ == "__main__":
     unittest.main()

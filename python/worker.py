@@ -13,6 +13,10 @@ from pathlib import Path
 ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
 MODEL_DIR = Path(os.environ.get("INVOICE_MODELS", ROOT / "models"))
 ENGINE = None
+ITEM_MARKER = re.compile(r"^[*＊][^*＊\n]{1,30}[*＊]")
+ITEM_STOP = re.compile(
+    r"^(?:合\s*计|价税合计|备\s*注|项目名称|规格型号|单位|数\s*量|单\s*价|金\s*额|税\s*率|征收率|税\s*额)"
+)
 
 
 def money(value):
@@ -59,6 +63,46 @@ def credit_code_valid(code):
         return False
     total = sum(alphabet.index(c) * weight for c, weight in zip(code[:17], weights))
     return code[-1] == alphabet[(31 - total % 31) % 31]
+
+
+def extract_items(words):
+    heads = sorted(
+        (
+            word
+            for word in words
+            if word["x"] < 245 and ITEM_MARKER.match(word["text"].strip())
+        ),
+        key=lambda word: (word["y"], word["x"]),
+    )
+    items = []
+    for index, head in enumerate(heads):
+        next_y = heads[index + 1]["y"] if index + 1 < len(heads) else float("inf")
+        row_height = max(6, min(head.get("h", 12) * .55, 12))
+        parts = []
+        for word in words:
+            text = word["text"].strip()
+            if not text or word["x"] >= 245:
+                continue
+            delta_y = word["y"] - head["y"]
+            same_row = abs(delta_y) < row_height and word["x"] >= head["x"] - 2
+            continuation = (
+                0 < delta_y < min(45, next_y - head["y"])
+                and abs(word["x"] - head["x"]) < 30
+            )
+            if not same_row and not continuation:
+                continue
+            if continuation and ITEM_STOP.match(text):
+                continue
+            if word is not head and ITEM_MARKER.match(text):
+                continue
+            parts.append(word)
+        value = "".join(
+            word["text"].strip()
+            for word in sorted(parts, key=lambda word: (word["y"], word["x"]))
+        )
+        if value:
+            items.append(value)
+    return list(dict.fromkeys(items))
 
 
 def parse_invoice(words, source="pdf-text"):
@@ -128,14 +172,7 @@ def parse_invoice(words, source="pdf-text"):
     if amounts["amountCents"] is None and amounts["totalCents"] is not None and amounts["taxCents"] is not None:
         amounts["amountCents"] = amounts["totalCents"] - amounts["taxCents"]
         warnings.append("不含税金额由价税合计减税额计算，请核对")
-    items = []
-    for w in words:
-        value = w["text"].strip()
-        if re.match(r"[*＊][^*＊]+[*＊]", value):
-            # PDF text extraction may split the item across lines.
-            extras = [v for v in words if v is not w and abs(v["x"] - w["x"]) < 15 and 0 < v["y"] - w["y"] < 45 and v["x"] < 240 and len(v["text"]) <= 8]
-            value += "".join(v["text"] for v in sorted(extras, key=lambda v: v["y"]) if not re.search(r"合计|备注|价税|项目", v["text"]))
-            items.append(value)
+    items = extract_items(words)
     if not items:
         items = re.findall(r"[*＊][^*＊\n]{1,20}[*＊][^\n]{1,30}", compact)
     item = "；".join(dict.fromkeys(items))[:500]
